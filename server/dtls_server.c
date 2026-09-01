@@ -30,9 +30,15 @@ int main(int argc, char **argv)
     unsigned char probe[1];
     WOLFSSL_CTX *ctx = NULL;
     WOLFSSL *ssl = NULL;
-    const char *crt_path, *key_path;
+    char crt_path[AS_PATH_MAX], key_path[AS_PATH_MAX];
     char buffer[512];
     const char *reply = "Mensagem recebida com sucesso via DTLS 1.3.";
+
+    /*
+     * Linha a linha: com stdout redirecionado para arquivo ou pipe, o buffer
+     * padrão é por bloco e o progresso do handshake só apareceria no fim.
+     */
+    setvbuf(stdout, NULL, _IOLBF, 0);
 
     if (port <= 0 || port > 65535) {
         fprintf(stderr, "Porta inválida: %s\n", argv[1]);
@@ -49,16 +55,14 @@ int main(int argc, char **argv)
         goto fail;
     }
 
-    crt_path = as_cert_path("server.crt");
-    key_path = as_cert_path("server.key");
-    if (crt_path == NULL)
+    if (as_cert_path(crt_path, sizeof(crt_path), "server.crt") == NULL ||
+        as_cert_path(key_path, sizeof(key_path), "server.key") == NULL)
         goto fail;
+
     if (wolfSSL_CTX_use_certificate_file(ctx, crt_path, WOLFSSL_FILETYPE_PEM) != WOLFSSL_SUCCESS) {
         fprintf(stderr, "Erro ao carregar %s\n", crt_path);
         goto fail;
     }
-    if (key_path == NULL)
-        goto fail;
     if (wolfSSL_CTX_use_PrivateKey_file(ctx, key_path, WOLFSSL_FILETYPE_PEM) != WOLFSSL_SUCCESS) {
         fprintf(stderr, "Erro ao carregar %s\n", key_path);
         goto fail;

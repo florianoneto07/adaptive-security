@@ -23,9 +23,15 @@ int main(int argc, char **argv)
     struct sockaddr_in server_addr;
     WOLFSSL_CTX *ctx = NULL;
     WOLFSSL *ssl = NULL;
-    const char *ca_path;
+    char ca_path[AS_PATH_MAX];
     char buffer[1024];
     const char *msg = "Mensagem enviada pelo cliente em C usando TLS 1.3.";
+
+    /*
+     * Linha a linha: com stdout redirecionado para arquivo ou pipe, o buffer
+     * padrão é por bloco e o progresso do handshake só apareceria no fim.
+     */
+    setvbuf(stdout, NULL, _IOLBF, 0);
 
     if (port <= 0 || port > 65535) {
         fprintf(stderr, "Porta inválida: %s\n", argv[2]);
@@ -40,8 +46,7 @@ int main(int argc, char **argv)
         goto fail;
     }
 
-    ca_path = as_cert_path("ca.crt");
-    if (ca_path == NULL)
+    if (as_cert_path(ca_path, sizeof(ca_path), "ca.crt") == NULL)
         goto fail;
     if (wolfSSL_CTX_load_verify_locations(ctx, ca_path, NULL) != WOLFSSL_SUCCESS) {
         fprintf(stderr, "Erro ao carregar a CA em %s\n", ca_path);
@@ -51,17 +56,12 @@ int main(int argc, char **argv)
     /* Explícito de propósito: não depender do padrão da build do wolfSSL. */
     wolfSSL_CTX_set_verify(ctx, WOLFSSL_VERIFY_PEER, NULL);
 
+    if (as_resolve_v4(host, port, SOCK_STREAM, &server_addr) != 0)
+        goto fail;
+
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
         perror("socket");
-        goto fail;
-    }
-
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons((uint16_t)port);
-    if (inet_pton(AF_INET, host, &server_addr.sin_addr) != 1) {
-        fprintf(stderr, "IP inválido: %s\n", host);
         goto fail;
     }
 

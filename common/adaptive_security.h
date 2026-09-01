@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/socket.h>
 
 #include <wolfssl/options.h>
 #include <wolfssl/ssl.h>
@@ -22,32 +24,83 @@
 /* Caminhos dos certificados                                                  */
 /* ------------------------------------------------------------------------- */
 
+/* Tamanho recomendado para os buffers passados a as_cert_path(). */
+#define AS_PATH_MAX 512
+
 /*
- * Resolve o caminho de um arquivo em certs/. O diretório pode ser trocado pela
- * variável de ambiente CERT_DIR, o que evita depender do diretório de trabalho
- * atual ao rodar os binários de fora da raiz do repositório.
+ * Resolve o caminho de um arquivo em certs/ dentro do buffer do chamador. O
+ * diretório pode ser trocado pela variável de ambiente CERT_DIR, o que evita
+ * depender do diretório de trabalho atual ao rodar os binários de fora da raiz
+ * do repositório.
+ *
+ * O buffer é do chamador de propósito: com um buffer estático interno, duas
+ * chamadas seguidas devolveriam o mesmo ponteiro e a primeira seria
+ * silenciosamente sobrescrita pela segunda.
+ *
+ * Retorna `out` em sucesso, NULL se o caminho não couber.
  */
-static const char *as_cert_path(const char *filename)
+static inline const char *as_cert_path(char *out, size_t out_sz,
+                                       const char *filename)
 {
-    static char path[512];
     const char *dir = getenv("CERT_DIR");
 
     if (dir == NULL || dir[0] == '\0')
         dir = "certs";
 
-    if (snprintf(path, sizeof(path), "%s/%s", dir, filename) >= (int)sizeof(path)) {
-        fprintf(stderr, "CERT_DIR longo demais\n");
+    if (snprintf(out, out_sz, "%s/%s", dir, filename) >= (int)out_sz) {
+        fprintf(stderr, "Caminho de certificado longo demais: %s/%s\n",
+                dir, filename);
         return NULL;
     }
-    return path;
+    return out;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Resolução de endereço                                                      */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Resolve host + porta em um sockaddr_in. Aceita tanto literal IPv4 quanto
+ * hostname, para que a verificação de identidade por nome seja utilizável.
+ *
+ * `socktype` é SOCK_STREAM (TLS) ou SOCK_DGRAM (DTLS).
+ * Retorna 0 em sucesso, negativo em erro.
+ */
+static inline int as_resolve_v4(const char *host, int port, int socktype,
+                                struct sockaddr_in *out)
+{
+    struct addrinfo hints, *res = NULL;
+    char port_str[16];
+    int rc;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = socktype;
+
+    snprintf(port_str, sizeof(port_str), "%d", port);
+
+    rc = getaddrinfo(host, port_str, &hints, &res);
+    if (rc != 0) {
+        fprintf(stderr, "Não foi possível resolver %s: %s\n",
+                host, gai_strerror(rc));
+        return -1;
+    }
+
+    memcpy(out, res->ai_addr, sizeof(*out));
+    freeaddrinfo(res);
+    return 0;
 }
 
 /* ------------------------------------------------------------------------- */
 /* Erros                                                                      */
 /* ------------------------------------------------------------------------- */
 
-/* Mensagem legível para o último erro do wolfSSL, em vez do código cru. */
-static const char *as_ssl_error(WOLFSSL *ssl, int ret)
+/*
+ * Mensagem legível para o último erro do wolfSSL, em vez do código cru.
+ * Usa buffer estático como strerror(): válido até a próxima chamada, portanto
+ * não use dois resultados na mesma expressão.
+ */
+static inline const char *as_ssl_error(WOLFSSL *ssl, int ret)
 {
     static char buf[WOLFSSL_MAX_ERROR_SZ];
     int err = wolfSSL_get_error(ssl, ret);
@@ -61,7 +114,7 @@ static const char *as_ssl_error(WOLFSSL *ssl, int ret)
 /* ------------------------------------------------------------------------- */
 
 /* Verdadeiro se a string for um literal IPv4 ou IPv6. */
-static int as_is_ip_literal(const char *host)
+static inline int as_is_ip_literal(const char *host)
 {
     unsigned char raw[sizeof(struct in6_addr)];
 
@@ -78,9 +131,12 @@ static int as_is_ip_literal(const char *host)
  * aceito, e um peer interno consegue se passar por outro. É uma distinção que
  * passa despercebida em laboratório e que importa no cenário AKMA/5G.
  *
+ * `host` é o endereço que o usuário pediu, não o resultado da resolução DNS:
+ * verificar contra o IP resolvido tornaria a checagem circular.
+ *
  * Retorna 0 em sucesso, negativo em erro.
  */
-static int as_require_peer_identity(WOLFSSL *ssl, const char *host)
+static inline int as_require_peer_identity(WOLFSSL *ssl, const char *host)
 {
     if (as_is_ip_literal(host)) {
         /*

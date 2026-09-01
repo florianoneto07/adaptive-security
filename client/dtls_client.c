@@ -11,7 +11,7 @@
 
 #include "adaptive_security.h"
 
-#define DEFAULT_SERVER_HOST "192.168.218.128"
+#define DEFAULT_SERVER_HOST "127.0.0.1"
 #define DEFAULT_PORT        4444
 
 /* Retransmissão do handshake: dobra a cada tentativa, de 1s até 8s. */

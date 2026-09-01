@@ -2,10 +2,14 @@
 #
 # Teste E2E entre as duas VMs, disparado a partir do servidor.
 #
-# Uso: ./scripts/run_remote_test.sh [HOST_SSH_DO_CLIENTE] [IP_DO_SERVIDOR]
+# Uso: ./scripts/run_remote_test.sh <HOST_SSH_DO_CLIENTE> <IP_DO_SERVIDOR>
 #
-#   ./scripts/run_remote_test.sh
-#   ./scripts/run_remote_test.sh lab-client 192.168.218.128
+#   ./scripts/run_remote_test.sh lab-client 10.0.0.5
+#
+# HOST_SSH_DO_CLIENTE é um host alcançável por SSH sem senha (um alias do
+# ~/.ssh/config ou usuario@endereco). IP_DO_SERVIDOR é o endereço desta
+# máquina como o cliente a enxerga, e precisa constar do subjectAltName do
+# certificado.
 #
 # Exige SSH sem senha para o cliente e o repositório já compilado dos dois
 # lados. Os casos negativos usam um certificado de cadeia válida emitido para
@@ -15,8 +19,14 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
-CLIENT_HOST="${1:-lab-client}"
-SERVER_IP="${2:-192.168.218.128}"
+# Sem defaults de propósito: valores de laboratório embutidos num repositório
+# público envelhecem mal e vazam topologia.
+if [[ $# -lt 2 ]]; then
+  sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \?//' >&2
+  exit 1
+fi
+CLIENT_HOST="$1"
+SERVER_IP="$2"
 TLS_PORT="${TLS_PORT:-4433}"
 DTLS_PORT="${DTLS_PORT:-4444}"
 REMOTE_REPO="${REMOTE_REPO:-\$HOME/adaptive-security}"

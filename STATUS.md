@@ -4,7 +4,7 @@
 
 ## Concluído
 
-- Comunicação IP entre as duas VMs (`192.168.218.128` ↔ `192.168.218.129`).
+- Comunicação IP entre as duas VMs do laboratório.
 - Cliente e servidor em C sobre wolfSSL.
 - TLS 1.3 funcional sobre TCP/4433.
 - Handshake TLS 1.3 validado E2E.
@@ -30,10 +30,10 @@
 - Timeouts de retransmissão configurados (1s a 8s).
 - Clientes aceitam hostname além de literal IP, via `getaddrinfo()`.
 
-### Validação E2E em 192.168.218.0/24
+### Validação E2E entre as duas VMs
 
-Servidor `192.168.218.128`, cliente `192.168.218.129`, ambos Ubuntu 26.04 com
-wolfSSL 5.9.2 (no cliente, instalado em `~/.local` sem privilégio).
+Duas VMs Ubuntu 26.04 na mesma sub-rede /24, com wolfSSL 5.9.2 instalado em
+`~/.local` sem privilégio administrativo.
 
 | Cenário | Resultado |
 | --- | --- |

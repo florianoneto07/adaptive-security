@@ -52,8 +52,8 @@ Detalhes em [STATUS.md](STATUS.md).
 
 | Item | Valor |
 | --- | --- |
-| VM servidor | `192.168.218.128` (Ubuntu 26.04, wolfSSL em `/usr/local`) |
-| VM cliente | `192.168.218.129` (Ubuntu 26.04, wolfSSL em `~/.local`) |
+| VM servidor | `[IP_DO_SERVIDOR]` |
+| VM cliente | `[IP_DO_CLIENTE]` |
 | TLS | TCP/4433 |
 | DTLS | UDP/4444 |
 
@@ -101,7 +101,7 @@ Na raiz do projeto:
 ./scripts/generate_certs.sh
 ```
 
-O script aceita o IP do servidor como argumento (padrão `192.168.218.128`), que
+O script aceita o IP do servidor como argumento (padrão `127.0.0.1`), que
 é gravado como `subjectAltName` do certificado:
 
 ```bash
@@ -112,7 +112,7 @@ O primeiro argumento é o endereço principal; os seguintes viram SANs extras,
 classificados automaticamente como IP ou DNS:
 
 ```bash
-./scripts/generate_certs.sh 192.168.218.128 127.0.0.1 localhost
+./scripts/generate_certs.sh [IP_DO_SERVIDOR] 127.0.0.1 localhost
 ```
 
 Todo endereço pelo qual o servidor for alcançado precisa estar no
@@ -155,7 +155,7 @@ trabalho**, então execute-os a partir da raiz do repositório — ou aponte
 
 ```bash
 # VM cliente
-./build/tls_client 192.168.218.128 4433
+./build/tls_client [IP_DO_SERVIDOR] 4433
 ```
 
 Resultado esperado: handshake TLS 1.3 concluído, certificado do servidor
@@ -171,7 +171,7 @@ validado contra a CA de teste e troca bidirecional de mensagens
 
 ```bash
 # VM cliente
-./build/dtls_client 192.168.218.128 4444
+./build/dtls_client [IP_DO_SERVIDOR] 4444
 ```
 
 O servidor DTLS descobre o peer espiando o primeiro datagrama com `MSG_PEEK`

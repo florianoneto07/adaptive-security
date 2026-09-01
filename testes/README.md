@@ -90,7 +90,7 @@ Loopback:
 Duas máquinas (use o IP real do servidor):
 
 ```bash
-./scripts/generate_certs.sh 192.168.218.128 127.0.0.1 localhost
+./scripts/generate_certs.sh [IP_DO_SERVIDOR] 127.0.0.1 localhost
 ```
 
 Confira o resultado:
@@ -109,7 +109,7 @@ X509v3 Subject Alternative Name:
 Só o `ca.crt`. A chave privada **nunca** sai do servidor:
 
 ```bash
-scp certs/ca.crt woca@192.168.218.129:~/adaptive-security/certs/ca.crt
+scp certs/ca.crt [USUARIO]@[IP_DO_CLIENTE]:~/adaptive-security/certs/ca.crt
 ```
 
 ---
@@ -422,11 +422,12 @@ Exige SSH sem senha do servidor para o cliente, e o repositório compilado dos
 dois lados:
 
 ```bash
-./scripts/run_remote_test.sh lab-client 192.168.218.128
+./scripts/run_remote_test.sh [HOST_SSH_DO_CLIENTE] [IP_DO_SERVIDOR]
 ```
 
-Sem argumentos, assume o host SSH `lab-client` e o servidor
-`192.168.218.128`.
+`[HOST_SSH_DO_CLIENTE]` é um alias do `~/.ssh/config` ou
+`[USUARIO]@[IP_DO_CLIENTE]`. `[IP_DO_SERVIDOR]` é o endereço desta máquina
+como o cliente a enxerga, e precisa constar do `subjectAltName`.
 
 ---
 

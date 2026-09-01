@@ -54,4 +54,4 @@ printf 'Contextos OSCORE gerados em %s\n' "${OUT_DIR}"
 printf '  server.conf  sender_id=%s  recipient_id=%s\n' "${SERVER_ID}" "${CLIENT_ID}"
 printf '  client.conf  sender_id=%s  recipient_id=%s\n' "${CLIENT_ID}" "${SERVER_ID}"
 printf '\nLeve client.conf para a VM cliente por canal seguro:\n'
-printf '  scp %s/client.conf woca@192.168.218.129:~/adaptive-security/oscore/\n' "${OUT_DIR}"
+printf '  scp %s/client.conf [USUARIO]@[IP_DO_CLIENTE]:~/adaptive-security/oscore/\n' "${OUT_DIR}"

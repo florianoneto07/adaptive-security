@@ -4,8 +4,11 @@ Comandos exatos para levantar e testar o protótipo entre as duas VMs.
 
 | Papel | Endereço | Prefixo do wolfSSL |
 | --- | --- | --- |
-| Servidor | `192.168.218.128` | `~/.local` |
-| Cliente | `192.168.218.129` | `~/.local` |
+| Servidor | `[IP_DO_SERVIDOR]` | `~/.local` |
+| Cliente | `[IP_DO_CLIENTE]` | `~/.local` |
+
+Substitua `[IP_DO_SERVIDOR]`, `[IP_DO_CLIENTE]` e `[USUARIO]` pelos valores da
+sua topologia.
 
 Como o wolfSSL não está em `/usr/local`, **toda execução precisa de
 `LD_LIBRARY_PATH`**. Para não repetir isso em todo comando, coloque no
@@ -51,7 +54,7 @@ Todo endereço pelo qual o servidor for alcançado precisa estar no
 `subjectAltName`, senão o cliente recusa a conexão:
 
 ```bash
-cd ~/adaptive-security && ./scripts/generate_certs.sh 192.168.218.128 127.0.0.1 localhost
+cd ~/adaptive-security && ./scripts/generate_certs.sh [IP_DO_SERVIDOR] 127.0.0.1 localhost
 ```
 
 ## 3. Enviar só a CA para o cliente
@@ -59,7 +62,7 @@ cd ~/adaptive-security && ./scripts/generate_certs.sh 192.168.218.128 127.0.0.1 
 A chave privada **não** sai do servidor:
 
 ```bash
-scp ~/adaptive-security/certs/ca.crt woca@192.168.218.129:~/adaptive-security/certs/ca.crt
+scp ~/adaptive-security/certs/ca.crt [USUARIO]@[IP_DO_CLIENTE]:~/adaptive-security/certs/ca.crt
 ```
 
 ---
@@ -75,7 +78,7 @@ cd ~/adaptive-security && LD_LIBRARY_PATH=$HOME/.local/lib ./build/tls_server -k
 **No CLIENTE**, noutro terminal:
 
 ```bash
-cd ~/adaptive-security && LD_LIBRARY_PATH=$HOME/.local/lib ./build/tls_client 192.168.218.128 4433
+cd ~/adaptive-security && LD_LIBRARY_PATH=$HOME/.local/lib ./build/tls_client [IP_DO_SERVIDOR] 4433
 ```
 
 Esperado no cliente:
@@ -84,7 +87,7 @@ Esperado no cliente:
 Handshake TLS concluído.
 Versão: TLSv1.3
 Cipher: TLS_AES_256_GCM_SHA384
-Certificado do servidor validado (cadeia + identidade 192.168.218.128).
+Certificado do servidor validado (cadeia + identidade [IP_DO_SERVIDOR]).
 ```
 
 ## 5. Teste DTLS 1.3
@@ -98,7 +101,7 @@ cd ~/adaptive-security && LD_LIBRARY_PATH=$HOME/.local/lib ./build/dtls_server -
 **No CLIENTE**:
 
 ```bash
-cd ~/adaptive-security && LD_LIBRARY_PATH=$HOME/.local/lib ./build/dtls_client 192.168.218.128 4444
+cd ~/adaptive-security && LD_LIBRARY_PATH=$HOME/.local/lib ./build/dtls_client [IP_DO_SERVIDOR] 4444
 ```
 
 Esperado: o mesmo, com `Versão: DTLSv1.3`.
@@ -110,7 +113,7 @@ Esperado: o mesmo, com `Versão: DTLSv1.3`.
 Do SERVIDOR, sem precisar de terminal no cliente:
 
 ```bash
-cd ~/adaptive-security && ./scripts/run_remote_test.sh
+cd ~/adaptive-security && ./scripts/run_remote_test.sh [HOST_SSH_DO_CLIENTE] [IP_DO_SERVIDOR]
 ```
 
 Sobe cada servidor, dispara o cliente remoto por SSH e confere os resultados,

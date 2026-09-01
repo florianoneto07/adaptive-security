@@ -6,7 +6,7 @@
 #
 #   ./scripts/generate_certs.sh
 #   ./scripts/generate_certs.sh 10.0.0.5
-#   ./scripts/generate_certs.sh 192.168.218.128 127.0.0.1 localhost
+#   ./scripts/generate_certs.sh 10.0.0.5 127.0.0.1 localhost
 #
 # Cada SAN extra é classificado automaticamente como IP ou DNS. Os clientes
 # exigem que o endereço usado na linha de comando apareça no subjectAltName,
@@ -16,7 +16,7 @@
 # git; nunca versione chaves privadas.
 set -euo pipefail
 
-SERVER_IP="${1:-192.168.218.128}"
+SERVER_IP="${1:-127.0.0.1}"
 shift || true
 EXTRA_SANS=("$@")
 

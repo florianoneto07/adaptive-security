@@ -21,15 +21,20 @@
   casos negativos que exigem a rejeição de certificado com cadeia válida e
   identidade errada.
 
+- **DTLS 1.3 fechando handshake**, verificado em loopback com wolfSSL 5.9.2
+  (`DTLSv1.3`, `TLS_AES_256_GCM_SHA384`). A causa do handshake não fechar era
+  `wolfSSL_accept()` num socket UDP sem peer definido: como UDP não tem
+  `accept()`, as respostas do servidor não tinham destino. O servidor passou a
+  descobrir a origem com `MSG_PEEK`, conectar o socket e informar o wolfSSL.
+- Cookie de `HelloRetryRequest` habilitado em DTLS 1.3.
+- Timeouts de retransmissão configurados (1s a 8s).
+- Clientes aceitam hostname além de literal IP, via `getaddrinfo()`.
+
 ## Em andamento
 
-- DTLS 1.3 sobre UDP/4444.
-  - Descoberta do peer via `MSG_PEEK` + socket UDP conectado, corrigindo a
-    causa provável do handshake não fechar (`wolfSSL_accept()` era chamado sem
-    peer definido, então as respostas do servidor não tinham destino).
-  - Cookie de `HelloRetryRequest` habilitado em DTLS 1.3.
-  - Timeouts de retransmissão configurados (1s a 8s).
-  - **Falta validar E2E entre as duas VMs.**
+- **Validação do DTLS 1.3 entre as duas VMs.** Em loopback funciona; falta
+  confirmar sobre a rede real, onde MTU, fragmentação e perda de datagramas
+  entram em jogo.
 
 ## Ainda não implementado
 

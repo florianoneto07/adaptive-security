@@ -32,8 +32,8 @@ adaptive-security-prototype/
 
 | Mecanismo | Situação |
 | --- | --- |
-| TLS 1.3 | Implementado e validado E2E entre as duas VMs |
-| DTLS 1.3 | Código-base preparado, **pendente de validação E2E** |
+| TLS 1.3 | Implementado; validado E2E entre as duas VMs e em loopback |
+| DTLS 1.3 | Handshake fechando em loopback; **pendente de validação entre as VMs** |
 | OSCORE | Não iniciado |
 | Motor adaptativo | Não iniciado |
 
@@ -176,6 +176,11 @@ do `subjectAltName` do certificado:
 - endereço IP → `X509_VERIFY_PARAM_set1_ip_asc()`, contra SANs `iPAddress`;
 - hostname → `wolfSSL_check_domain_name()`, contra SANs `dNSName`.
 
+Os clientes aceitam as duas formas (`./build/tls_client localhost 4433`). A
+verificação usa sempre o endereço informado na linha de comando, nunca o IP
+resolvido pelo DNS — checar contra o resultado da resolução tornaria a
+validação circular.
+
 A lógica fica em [common/adaptive_security.h](common/adaptive_security.h), em
 um ponto só, para não divergir entre o cliente TLS e o cliente DTLS.
 
@@ -186,11 +191,22 @@ make
 ./scripts/run_local_test.sh
 ```
 
-Sobe os dois pares cliente/servidor em loopback e verifica quatro casos: os
-handshakes TLS e DTLS devem fechar, e ambos devem **rejeitar** um certificado
-com cadeia válida porém emitido para outro endereço. Os testes negativos são o
-que realmente comprova a verificação de identidade — sem eles, um bug que
-desligue a checagem passa despercebido.
+Sobe os pares cliente/servidor em loopback e verifica seis casos:
+
+| Caso | Esperado |
+| --- | --- |
+| Handshake TLS 1.3 + troca de mensagens | aceitar |
+| Handshake DTLS 1.3 + troca de mensagens | aceitar |
+| TLS por hostname, com SAN `dNSName` | aceitar |
+| Certificado emitido para outro IP, sobre TLS | **rejeitar** |
+| Certificado emitido para outro IP, sobre DTLS | **rejeitar** |
+| Hostname ausente do `subjectAltName` | **rejeitar** |
+
+Os casos negativos são o que realmente comprova a verificação de identidade —
+sem eles, um bug que desligue a checagem passa despercebido, porque o caminho
+feliz continua funcionando. O harness também distingue "cliente foi rejeitado"
+de "servidor não subiu", já que um servidor quebrado faz os testes negativos
+passarem pelo motivo errado.
 
 ## Roteiro
 

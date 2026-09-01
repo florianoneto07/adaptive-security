@@ -11,7 +11,7 @@
 
 #include "adaptive_security.h"
 
-#define DEFAULT_SERVER_HOST "192.168.237.128"
+#define DEFAULT_SERVER_HOST "192.168.218.128"
 #define DEFAULT_PORT        4433
 
 int main(int argc, char **argv)

@@ -4,7 +4,7 @@
 
 ## Concluído
 
-- Comunicação IP entre as duas VMs (`192.168.237.128` ↔ `192.168.237.129`).
+- Comunicação IP entre as duas VMs (`192.168.218.128` ↔ `192.168.218.129`).
 - Cliente e servidor em C sobre wolfSSL.
 - TLS 1.3 funcional sobre TCP/4433.
 - Handshake TLS 1.3 validado E2E.

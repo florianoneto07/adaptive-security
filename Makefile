@@ -28,8 +28,10 @@ endif
 CFLAGS  ?= -O2 -g -Wall -Wextra -Wpedantic
 LDFLAGS ?=
 
-ALL_CFLAGS := -std=c11 -D_DEFAULT_SOURCE $(WOLFSSL_CFLAGS) $(CFLAGS)
+ALL_CFLAGS := -std=c11 -D_DEFAULT_SOURCE -Icommon $(WOLFSSL_CFLAGS) $(CFLAGS)
 ALL_LDLIBS := $(WOLFSSL_LIBS) $(LDLIBS)
+
+COMMON_HDR  := common/adaptive_security.h
 
 SERVER_BINS := tls_server dtls_server
 CLIENT_BINS := tls_client dtls_client
@@ -43,10 +45,10 @@ all: $(TARGETS)
 # Atalhos: "make tls_server" em vez de "make build/tls_server".
 $(BINS): %: $(BUILD)/%
 
-$(addprefix $(BUILD)/,$(SERVER_BINS)): $(BUILD)/%: server/%.c | $(BUILD)
+$(addprefix $(BUILD)/,$(SERVER_BINS)): $(BUILD)/%: server/%.c $(COMMON_HDR) | $(BUILD)
 	$(CC) $(ALL_CFLAGS) -o $@ $< $(LDFLAGS) $(ALL_LDLIBS)
 
-$(addprefix $(BUILD)/,$(CLIENT_BINS)): $(BUILD)/%: client/%.c | $(BUILD)
+$(addprefix $(BUILD)/,$(CLIENT_BINS)): $(BUILD)/%: client/%.c $(COMMON_HDR) | $(BUILD)
 	$(CC) $(ALL_CFLAGS) -o $@ $< $(LDFLAGS) $(ALL_LDLIBS)
 
 $(BUILD):

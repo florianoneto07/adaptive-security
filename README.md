@@ -20,6 +20,7 @@ adaptive-security-prototype/
 ├── common/
 │   └── adaptive_security.h # helpers compartilhados (identidade do peer, erros)
 ├── scripts/
+│   ├── setup_wolfssl.sh    # compila e instala o wolfSSL com as flags exigidas
 │   ├── generate_certs.sh   # gera CA e certificado de servidor de teste
 │   └── run_local_test.sh   # teste E2E em loopback, com casos negativos
 ├── certs/                  # material criptográfico local (ignorado pelo git)
@@ -53,7 +54,15 @@ Detalhes em [STATUS.md](STATUS.md).
 - **wolfSSL** compilado com TLS 1.3 e DTLS 1.3 habilitados
 - `gcc`/`clang`, `make`, `openssl`
 
-Build de referência do wolfSSL:
+O script abaixo cuida do wolfSSL com as opções corretas:
+
+```bash
+sudo apt install -y build-essential autoconf automake libtool pkg-config git
+./scripts/setup_wolfssl.sh                 # instala em /usr/local
+./scripts/setup_wolfssl.sh "$HOME/.local"  # ou num prefixo do usuário, sem sudo
+```
+
+Build de referência, caso prefira fazer à mão:
 
 ```bash
 ./configure \

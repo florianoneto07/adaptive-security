@@ -33,8 +33,8 @@ adaptive-security-prototype/
 
 | Mecanismo | Situação |
 | --- | --- |
-| TLS 1.3 | Implementado; validado E2E entre as duas VMs e em loopback |
-| DTLS 1.3 | Handshake fechando em loopback; **pendente de validação entre as VMs** |
+| TLS 1.3 | Implementado e validado E2E entre as duas VMs |
+| DTLS 1.3 | Implementado e validado E2E entre as duas VMs |
 | OSCORE | Não iniciado |
 | Motor adaptativo | Não iniciado |
 
@@ -44,8 +44,8 @@ Detalhes em [STATUS.md](STATUS.md).
 
 | Item | Valor |
 | --- | --- |
-| VM servidor | `192.168.218.128` |
-| VM cliente | `192.168.218.129` |
+| VM servidor | `192.168.218.128` (Ubuntu 26.04, wolfSSL em `/usr/local`) |
+| VM cliente | `192.168.218.129` (Ubuntu 26.04, wolfSSL em `~/.local`) |
 | TLS | TCP/4433 |
 | DTLS | UDP/4444 |
 

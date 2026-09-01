@@ -19,8 +19,10 @@ adaptive-security-prototype/
 │   └── dtls_client.c       # cliente DTLS 1.3 sobre UDP
 ├── common/
 │   └── adaptive_security.h # helpers compartilhados (identidade do peer, erros)
+├── testes/
+│   └── README.md           # passo a passo de validação, protocolo por protocolo
 ├── docs/
-│   └── RUNBOOK.md          # roteiro de testes, comando a comando
+│   └── RUNBOOK.md          # roteiro operacional das duas VMs
 ├── scripts/
 │   ├── setup_wolfssl.sh        # instala o wolfSSL com as flags exigidas
 │   ├── setup_libcoap.sh        # instala o libcoap (CoAP + OSCORE) sobre wolfSSL
@@ -201,8 +203,12 @@ um ponto só, para não divergir entre o cliente TLS e o cliente DTLS.
 
 ## 5. Testes
 
-O roteiro completo, comando a comando, está em
-[docs/RUNBOOK.md](docs/RUNBOOK.md). Em resumo:
+O passo a passo de validação, protocolo por protocolo, com os comandos exatos
+e a saída esperada de cada teste, está em [testes/README.md](testes/README.md)
+— é por onde começar depois de clonar o repositório. O roteiro operacional das
+duas VMs está em [docs/RUNBOOK.md](docs/RUNBOOK.md).
+
+Em resumo:
 
 ```bash
 make

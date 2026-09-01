@@ -50,10 +50,13 @@ não da validação de cadeia.
 
 - Nada bloqueando. Próximo passo é a coleta de métricas.
 
+- **CoAP + OSCORE (RFC 8613) validado E2E** entre as duas VMs, com libcoap
+  4.3.5 sobre o mesmo wolfSSL. Requisição encapsulada com opção `Oscore:` e
+  corpo cifrado; contexto com `master_secret` divergente é recusado com
+  `Decryption Failure`.
+
 ## Ainda não implementado
 
-- CoAP.
-- OSCORE.
 - Motor de decisão adaptativo (seleção TLS / DTLS / OSCORE por contexto).
 - Coleta automatizada de métricas (tempo de handshake, RTT, overhead de bytes).
 - Integração com o projeto de AKMA para 5G.
@@ -69,5 +72,10 @@ não da validação de cadeia.
   demultiplexar várias associações sobre o mesmo socket, ou usar um socket por
   peer.
 - Sem revogação (CRL/OCSP).
+- O `coap-server` do libcoap habilita OSCORE mas não o exige: cliente sem
+  contexto ainda recebe o recurso em claro. Tornar obrigatório é decisão da
+  aplicação, e é exatamente a política que o motor adaptativo deve controlar.
+- Os contextos OSCORE são estáticos, gerados por script. Não há derivação de
+  chave a partir do AKMA, que é o objetivo final.
 - As mensagens trocadas são fixas; ainda não há payload configurável para medir
   overhead com tamanhos variados.

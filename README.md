@@ -28,7 +28,8 @@ adaptive-security-prototype/
 │   ├── setup_libcoap.sh        # instala o libcoap (CoAP + OSCORE) sobre wolfSSL
 │   ├── generate_certs.sh       # gera CA e certificado de servidor de teste
 │   ├── generate_oscore_conf.sh # gera o par de contextos OSCORE
-│   ├── run_local_test.sh       # teste E2E em loopback, com casos negativos
+│   ├── run_local_test.sh       # teste E2E de TLS/DTLS em loopback
+│   ├── run_oscore_test.sh      # teste E2E de OSCORE em loopback
 │   └── run_remote_test.sh      # teste E2E entre as duas VMs, via SSH
 ├── certs/                  # material criptográfico local (ignorado pelo git)
 ├── oscore/                 # contextos OSCORE locais (ignorado pelo git)
@@ -43,7 +44,7 @@ adaptive-security-prototype/
 | --- | --- |
 | TLS 1.3 | Implementado e validado E2E entre as duas VMs |
 | DTLS 1.3 | Implementado e validado E2E entre as duas VMs |
-| OSCORE | Não iniciado |
+| OSCORE | Implementado e validado E2E entre as duas VMs (libcoap + wolfSSL) |
 | Motor adaptativo | Não iniciado |
 
 Detalhes em [STATUS.md](STATUS.md).
@@ -212,8 +213,9 @@ Em resumo:
 
 ```bash
 make
-./scripts/run_local_test.sh    # em loopback, só nesta máquina
-./scripts/run_remote_test.sh   # entre as duas VMs, via SSH
+./scripts/run_local_test.sh    # TLS e DTLS, em loopback
+./scripts/run_oscore_test.sh   # OSCORE, em loopback
+./scripts/run_remote_test.sh   # TLS e DTLS entre as duas VMs, via SSH
 ```
 
 Os servidores atendem uma conexão e saem. Para deixá-los no ar entre execuções
@@ -244,6 +246,7 @@ passarem pelo motivo errado.
 
 1. Validar DTLS 1.3 E2E entre as duas VMs.
 2. Coletar métricas comparativas TLS vs DTLS (handshake, RTT, overhead).
-3. Adicionar CoAP + OSCORE.
+3. ~~Adicionar CoAP + OSCORE.~~ Concluído.
 4. Integrar os três mecanismos ao motor de decisão adaptativo.
-5. Integrar o motor adaptativo ao projeto de AKMA para 5G.
+5. Derivar os contextos OSCORE a partir do AKMA, em vez de gerá-los por script.
+6. Integrar o motor adaptativo ao projeto de AKMA para 5G.

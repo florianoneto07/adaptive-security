@@ -354,27 +354,168 @@ um cliente que já foi embora, e a segunda associação falharia.
 
 ## OSCORE
 
-> **Ainda não implementado.** A infraestrutura está pronta, o teste E2E não.
+Proteção no nível do objeto CoAP (RFC 8613): a mensagem viaja cifrada e
+autenticada fim a fim, independentemente do transporte. Diferente de TLS e
+DTLS, não há handshake nem certificado — as duas pontas partilham um contexto
+derivado de um `master_secret`.
 
-O que já existe:
+Usa o `coap-server` e o `coap-client` do libcoap, compilados sobre o mesmo
+wolfSSL.
+
+### Pré-requisitos
 
 ```bash
-./scripts/setup_libcoap.sh "$HOME/.local"   # instala libcoap com OSCORE sobre wolfSSL
-./scripts/generate_oscore_conf.sh           # gera o par de contextos (RFC 8613)
+./scripts/setup_libcoap.sh "$HOME/.local"
 ```
 
-O gerador produz `oscore/server.conf` e `oscore/client.conf` com o mesmo
-`master_secret` e os IDs cruzados — o `sender_id` de um lado é o
-`recipient_id` do outro. Trocá-los é o erro de configuração mais comum, e ele
-se manifesta como falha de decifragem, não como erro de configuração.
+Confirme que o OSCORE entrou na build:
 
-O `oscore/` é ignorado pelo git porque os arquivos carregam o segredo
-compartilhado. Leve o `client.conf` à outra máquina por canal seguro.
+```bash
+LD_LIBRARY_PATH=$HOME/.local/lib $HOME/.local/bin/coap-client 2>&1 | grep OSCORE
+```
 
-Esta seção será completada com os passos de validação quando o OSCORE estiver
-integrado. Acompanhe o [STATUS.md](../STATUS.md).
+```
+(Have OSCORE)
+```
 
----
+### Gerar os contextos
+
+```bash
+./scripts/generate_oscore_conf.sh
+```
+
+```
+Contextos OSCORE gerados em /caminho/do/repo/oscore
+  server.conf  sender_id=01  recipient_id=02
+  client.conf  sender_id=02  recipient_id=01
+```
+
+Repare na simetria: o `sender_id` de um lado é o `recipient_id` do outro.
+Trocá-los é o erro de configuração mais comum, e ele se manifesta como falha de
+decifragem, não como erro de configuração.
+
+O `master_secret` é o mesmo nos dois arquivos e é **segredo compartilhado**. O
+diretório `oscore/` é ignorado pelo git. Leve o `client.conf` à outra máquina
+por canal seguro:
+
+```bash
+scp oscore/client.conf [USUARIO]@[IP_DO_CLIENTE]:~/adaptive-security/oscore/
+```
+
+### O1 — Requisição protegida por OSCORE
+
+`[SERVIDOR]`:
+
+```bash
+LD_LIBRARY_PATH=$HOME/.local/lib $HOME/.local/bin/coap-server -p 5683 -E oscore/server.conf
+```
+
+`[CLIENTE]`:
+
+```bash
+LD_LIBRARY_PATH=$HOME/.local/lib $HOME/.local/bin/coap-client -E oscore/client.conf -m get coap://[IP_DO_SERVIDOR]/time
+```
+
+Esperado: o recurso `/time` do servidor.
+
+```
+Sep 01 18:37:33
+```
+
+**Critério:** a resposta chega. Mas isso sozinho não prova que houve proteção —
+ver O2.
+
+### O2 — Confirmar que a mensagem realmente viajou protegida
+
+O caminho feliz de O1 daria certo igualmente com CoAP em claro. Para ver o
+envelope OSCORE, aumente a verbosidade:
+
+```bash
+LD_LIBRARY_PATH=$HOME/.local/lib $HOME/.local/bin/coap-client -E oscore/client.conf -m get coap://[IP_DO_SERVIDOR]/time -v 7
+```
+
+```
+DEBG PDU to encrypt
+v:1 t:CON c:POST i:8a60 {} [ Oscore:pIV=0x00,kid=0x02 ] :: binary data length 21
+v:1 t:ACK c:2.04 i:8a60 {} [ Oscore:pIV=0x00 ] :: binary data length 19
+DEBG Decrypted PDU
+```
+
+**Critério:** a presença da opção `Oscore:` e do corpo binário. Note que o
+`GET` original aparece na rede como um `POST` com payload cifrado — o método e
+o caminho reais estão dentro do envelope, invisíveis a quem observa.
+
+### O3 — `master_secret` divergente *(deve falhar)*
+
+Este é o teste que valida a criptografia. Gere um contexto com segredo
+diferente:
+
+```bash
+sed 's/^master_secret.*/master_secret,hex,"ffffffffffffffffffffffffffffffff"/' oscore/client.conf > /tmp/bad.conf
+```
+
+```bash
+LD_LIBRARY_PATH=$HOME/.local/lib $HOME/.local/bin/coap-client -E /tmp/bad.conf -m get coap://[IP_DO_SERVIDOR]/time
+```
+
+Esperado no cliente:
+
+```
+4.00 Decryption failed
+```
+
+E no servidor:
+
+```
+WARN OSCORE: Decryption Failure, result code: -5
+WARN OSCORE: PDU could not be decrypted
+```
+
+> **Use um servidor recém-iniciado para este teste.** Reaproveitando a
+> instância que já atendeu O1, a resposta vem como `4.01 Replay detected`: o
+> contexto inválido reusa `sender_id` e números de sequência já vistos, e a
+> janela anti-replay barra a mensagem *antes* da decifragem. A rejeição
+> acontece, mas por outro motivo, e o teste deixaria de provar o que se propõe.
+
+### O4 — Suíte automatizada
+
+```bash
+./scripts/run_oscore_test.sh
+```
+
+Saída real:
+
+```
+== Preparando ==
+contextos em /tmp/tmp.NNBVoUpWEf
+
+== Caminho feliz ==
+  PASS  GET protegido por OSCORE
+        resposta: Sep 01 18:39:23
+  PASS  Requisição encapsulada em envelope OSCORE
+        v:1 t:CON c:POST i:0f01 {} [ Oscore:pIV=0x00,kid=0x02 ] :: binary data length 21
+
+== Contexto inválido (deve ser REJEITADO) ==
+  PASS  master_secret divergente é recusado
+        4.00 Decryption failed
+  PASS  Servidor registra a falha de decifragem
+        WARN OSCORE: Decryption Failure, result code: -5
+
+== Resultado ==
+  4 passaram, 0 falharam
+```
+
+### Limitação conhecida
+
+O `coap-server` do libcoap **habilita** OSCORE com `-E`, mas não o **exige**:
+um cliente sem contexto OSCORE nenhum ainda recebe o recurso em claro. Não há
+opção de linha de comando para tornar obrigatório; a exigência é decisão da
+aplicação, no manipulador do recurso.
+
+Para este protótipo isso é aceitável, e na verdade é justamente o tipo de
+política que o motor adaptativo vai decidir. Mas não confunda "OSCORE
+disponível" com "tráfego protegido": em produção, um recurso sensível precisa
+recusar requisições não protegidas.
 
 ## Suítes automatizadas
 

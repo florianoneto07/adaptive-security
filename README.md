@@ -17,8 +17,11 @@ adaptive-security-prototype/
 ├── client/
 │   ├── tls_client.c        # cliente TLS 1.3 sobre TCP
 │   └── dtls_client.c       # cliente DTLS 1.3 sobre UDP
+├── common/
+│   └── adaptive_security.h # helpers compartilhados (identidade do peer, erros)
 ├── scripts/
-│   └── generate_certs.sh   # gera CA e certificado de servidor de teste
+│   ├── generate_certs.sh   # gera CA e certificado de servidor de teste
+│   └── run_local_test.sh   # teste E2E em loopback, com casos negativos
 ├── certs/                  # material criptográfico local (ignorado pelo git)
 ├── Makefile
 ├── README.md
@@ -53,11 +56,25 @@ Detalhes em [STATUS.md](STATUS.md).
 Build de referência do wolfSSL:
 
 ```bash
-./configure --enable-tls13 --enable-dtls --enable-dtls13
+./configure \
+  --enable-tls13 \
+  --enable-dtls \
+  --enable-dtls13 \
+  --enable-opensslextra \
+  --enable-sni \
+  --enable-keylog-export \
+  C_EXTRA_FLAGS="-DWOLFSSL_IP_ALT_NAME -DWOLFSSL_DTLS_CID"
 make -j"$(nproc)"
 sudo make install
 sudo ldconfig
 ```
+
+Duas flags não são opcionais para este protótipo:
+
+- `--enable-opensslextra` expõe `X509_VERIFY_PARAM_set1_ip_asc()`, usada para
+  amarrar o certificado ao IP do servidor.
+- `-DWOLFSSL_IP_ALT_NAME` faz o wolfSSL comparar `subjectAltName` do tipo
+  `iPAddress`. Sem ela o SAN de IP do certificado é ignorado na validação.
 
 ## 1. Gerar certificados
 
@@ -74,8 +91,21 @@ O script aceita o IP do servidor como argumento (padrão `192.168.237.128`), que
 ./scripts/generate_certs.sh 10.0.0.5
 ```
 
+O primeiro argumento é o endereço principal; os seguintes viram SANs extras,
+classificados automaticamente como IP ou DNS:
+
+```bash
+./scripts/generate_certs.sh 192.168.237.128 127.0.0.1 localhost
+```
+
+Todo endereço pelo qual o servidor for alcançado precisa estar no
+`subjectAltName`, porque os clientes exigem que o endereço passado na linha de
+comando conste do certificado (ver *Verificação de identidade* abaixo).
+
 Copie a pasta `certs/` para ambas as VMs. O cliente precisa de `ca.crt`; o
-servidor usa `server.crt` e `server.key`.
+servidor usa `server.crt` e `server.key`. O diretório pode ser trocado pela
+variável de ambiente `CERT_DIR`, o que permite rodar os binários de fora da
+raiz do repositório.
 
 > A pasta `certs/` é ignorada pelo git. Nenhuma chave privada deve ser
 > versionada, mesmo sendo material de laboratório.
@@ -95,8 +125,9 @@ make WOLFSSL_DIR=/opt/wolfssl
 
 ## 3. Executar
 
-Todos os binários resolvem `certs/` **relativamente ao diretório de trabalho**,
-portanto execute-os a partir da raiz do repositório.
+Por padrão os binários resolvem `certs/` **relativamente ao diretório de
+trabalho**, então execute-os a partir da raiz do repositório — ou aponte
+`CERT_DIR` para outro lugar.
 
 ### TLS 1.3
 
@@ -126,10 +157,40 @@ validado contra a CA de teste e troca bidirecional de mensagens
 ./build/dtls_client 192.168.237.128 4444
 ```
 
-> **Baseline de desenvolvimento, ainda não validado.** Dependendo da build do
-> wolfSSL, o DTLS pode exigir configuração adicional de peer, cookie
-> (`HelloVerifyRequest`) e timeouts de retransmissão. Trate estes dois arquivos
-> como ponto de partida, não como etapa concluída.
+O servidor DTLS descobre o peer espiando o primeiro datagrama com `MSG_PEEK`
+antes de conectar o socket UDP — UDP não tem `accept()`, e sem isso as
+respostas do handshake não têm destino. Em DTLS 1.3 também é enviado um cookie
+no `HelloRetryRequest`, que obriga o cliente a provar que recebe no endereço de
+origem que alega ter.
+
+## 4. Verificação de identidade
+
+Validar a cadeia contra a CA responde *"este certificado foi emitido por quem
+eu confio"*. Não responde *"este certificado é de quem estou falando"*. São
+perguntas diferentes: sem a segunda, qualquer certificado assinado pela mesma
+CA é aceito, e um peer interno consegue se passar por outro.
+
+Por isso os clientes exigem que o endereço passado na linha de comando conste
+do `subjectAltName` do certificado:
+
+- endereço IP → `X509_VERIFY_PARAM_set1_ip_asc()`, contra SANs `iPAddress`;
+- hostname → `wolfSSL_check_domain_name()`, contra SANs `dNSName`.
+
+A lógica fica em [common/adaptive_security.h](common/adaptive_security.h), em
+um ponto só, para não divergir entre o cliente TLS e o cliente DTLS.
+
+## 5. Testes
+
+```bash
+make
+./scripts/run_local_test.sh
+```
+
+Sobe os dois pares cliente/servidor em loopback e verifica quatro casos: os
+handshakes TLS e DTLS devem fechar, e ambos devem **rejeitar** um certificado
+com cadeia válida porém emitido para outro endereço. Os testes negativos são o
+que realmente comprova a verificação de identidade — sem eles, um bug que
+desligue a checagem passa despercebido.
 
 ## Roteiro
 

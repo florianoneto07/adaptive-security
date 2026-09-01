@@ -2,6 +2,10 @@
 certs/*
 !certs/.gitkeep
 
+# Contextos OSCORE: carregam o master_secret compartilhado
+oscore/*
+!oscore/.gitkeep
+
 # Artefatos de compilação
 build/
 *.o

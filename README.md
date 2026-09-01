@@ -19,11 +19,17 @@ adaptive-security-prototype/
 │   └── dtls_client.c       # cliente DTLS 1.3 sobre UDP
 ├── common/
 │   └── adaptive_security.h # helpers compartilhados (identidade do peer, erros)
+├── docs/
+│   └── RUNBOOK.md          # roteiro de testes, comando a comando
 ├── scripts/
-│   ├── setup_wolfssl.sh    # compila e instala o wolfSSL com as flags exigidas
-│   ├── generate_certs.sh   # gera CA e certificado de servidor de teste
-│   └── run_local_test.sh   # teste E2E em loopback, com casos negativos
+│   ├── setup_wolfssl.sh        # instala o wolfSSL com as flags exigidas
+│   ├── setup_libcoap.sh        # instala o libcoap (CoAP + OSCORE) sobre wolfSSL
+│   ├── generate_certs.sh       # gera CA e certificado de servidor de teste
+│   ├── generate_oscore_conf.sh # gera o par de contextos OSCORE
+│   ├── run_local_test.sh       # teste E2E em loopback, com casos negativos
+│   └── run_remote_test.sh      # teste E2E entre as duas VMs, via SSH
 ├── certs/                  # material criptográfico local (ignorado pelo git)
+├── oscore/                 # contextos OSCORE locais (ignorado pelo git)
 ├── Makefile
 ├── README.md
 └── STATUS.md
@@ -195,9 +201,20 @@ um ponto só, para não divergir entre o cliente TLS e o cliente DTLS.
 
 ## 5. Testes
 
+O roteiro completo, comando a comando, está em
+[docs/RUNBOOK.md](docs/RUNBOOK.md). Em resumo:
+
 ```bash
 make
-./scripts/run_local_test.sh
+./scripts/run_local_test.sh    # em loopback, só nesta máquina
+./scripts/run_remote_test.sh   # entre as duas VMs, via SSH
+```
+
+Os servidores atendem uma conexão e saem. Para deixá-los no ar entre execuções
+do cliente, use `-k`:
+
+```bash
+./build/tls_server -k 4433
 ```
 
 Sobe os pares cliente/servidor em loopback e verifica seis casos:

@@ -39,22 +39,43 @@ report() {
 }
 
 # Executa um par servidor/cliente e devolve o código de saída do cliente.
-# $1 = binário do servidor, $2 = binário do cliente, $3 = porta, $4 = CERT_DIR
+# $1 = servidor, $2 = cliente, $3 = porta, $4 = CERT_DIR, $5 = host (opt)
+#
+# Define SERVER_UP=1/0. Distinguir "o cliente foi rejeitado" de "o servidor
+# nunca subiu" é essencial: sem isso um servidor quebrado faz os testes
+# negativos passarem pelo motivo errado, que foi exatamente o que aconteceu na
+# primeira execução desta suíte.
 run_pair() {
   local server_bin="$1" client_bin="$2" port="$3" cert_dir="$4"
+  local host="${5:-127.0.0.1}"
   local server_log="${WORK_DIR}/server.log" client_log="${WORK_DIR}/client.log"
   local server_pid rc
 
+  SERVER_UP=0
   CERT_DIR="${cert_dir}" "./build/${server_bin}" "${port}" >"${server_log}" 2>&1 &
   server_pid=$!
 
-  # Espera o servidor abrir a porta antes de disparar o cliente.
+  # Espera o servidor anunciar que está escutando, ou desistir se ele morrer.
   for _ in $(seq 1 50); do
-    if grep -q "aguardando" "${server_log}" 2>/dev/null; then break; fi
+    if grep -q "aguardando" "${server_log}" 2>/dev/null; then
+      SERVER_UP=1
+      break
+    fi
+    if ! kill -0 "${server_pid}" 2>/dev/null; then
+      break
+    fi
     sleep 0.1
   done
 
-  CERT_DIR="${cert_dir}" "./build/${client_bin}" 127.0.0.1 "${port}" >"${client_log}" 2>&1
+  if [[ "${SERVER_UP}" -eq 0 ]]; then
+    kill "${server_pid}" 2>/dev/null
+    wait "${server_pid}" 2>/dev/null
+    LAST_SERVER_LOG="${server_log}"
+    LAST_CLIENT_LOG="${server_log}"
+    return 99
+  fi
+
+  CERT_DIR="${cert_dir}" "./build/${client_bin}" "${host}" "${port}" >"${client_log}" 2>&1
   rc=$?
 
   # O servidor é single-shot, mas num teste negativo pode ficar preso à espera
@@ -74,6 +95,9 @@ CERT_DIR="${WORK_DIR}/valid" ./scripts/generate_certs.sh 127.0.0.1 localhost >/d
 # que o cliente confia. Cadeia válida, identidade errada — exatamente o caso
 # que a validação de cadeia sozinha deixa passar.
 CERT_DIR="${WORK_DIR}/wrong" ./scripts/generate_certs.sh 198.51.100.7 >/dev/null 2>&1
+# Certificado válido para o IP de loopback, mas sem SAN dNSName: conectar por
+# "localhost" precisa ser recusado.
+CERT_DIR="${WORK_DIR}/iponly" ./scripts/generate_certs.sh 127.0.0.1 >/dev/null 2>&1
 
 echo "Certificados temporários em ${WORK_DIR}"
 
@@ -103,6 +127,14 @@ else
   sed 's/^/        /' "${LAST_CLIENT_LOG}"
 fi
 
+if run_pair tls_server tls_client "${TLS_PORT}" "${WORK_DIR}/valid" localhost &&
+   grep -q "Handshake TLS concluído" "${LAST_CLIENT_LOG}"; then
+  report pass "TLS por hostname (SAN dNSName)"
+else
+  report fail "TLS por hostname (SAN dNSName)"
+  sed 's/^/        /' "${LAST_CLIENT_LOG}"
+fi
+
 echo
 echo "== Identidade do peer (devem ser REJEITADOS) =="
 
@@ -112,19 +144,29 @@ mkdir -p "${WORK_DIR}/impostor"
 cp "${WORK_DIR}/wrong/server.crt" "${WORK_DIR}/wrong/server.key" "${WORK_DIR}/impostor/"
 cp "${WORK_DIR}/wrong/ca.crt" "${WORK_DIR}/impostor/ca.crt"
 
-if run_pair tls_server tls_client "${TLS_PORT}" "${WORK_DIR}/impostor"; then
-  report fail "TLS rejeita certificado emitido para outro endereço"
-  sed 's/^/        /' "${LAST_CLIENT_LOG}"
-else
-  report pass "TLS rejeita certificado emitido para outro endereço"
-fi
+check_rejected() {
+  local name="$1"
+  # rc 99 = servidor não subiu: a rejeição não prova nada.
+  if [[ "$2" -eq 99 ]]; then
+    report fail "${name} (servidor não subiu)"
+    sed 's/^/        /' "${LAST_SERVER_LOG}"
+  elif [[ "$2" -eq 0 ]]; then
+    report fail "${name} (certificado ACEITO indevidamente)"
+    sed 's/^/        /' "${LAST_CLIENT_LOG}"
+  else
+    report pass "${name}"
+    grep -m1 "Falha no handshake" "${LAST_CLIENT_LOG}" | sed 's/^/        /'
+  fi
+}
 
-if run_pair dtls_server dtls_client "${DTLS_PORT}" "${WORK_DIR}/impostor"; then
-  report fail "DTLS rejeita certificado emitido para outro endereço"
-  sed 's/^/        /' "${LAST_CLIENT_LOG}"
-else
-  report pass "DTLS rejeita certificado emitido para outro endereço"
-fi
+run_pair tls_server tls_client "${TLS_PORT}" "${WORK_DIR}/impostor"
+check_rejected "TLS rejeita certificado emitido para outro endereço" $?
+
+run_pair dtls_server dtls_client "${DTLS_PORT}" "${WORK_DIR}/impostor"
+check_rejected "DTLS rejeita certificado emitido para outro endereço" $?
+
+run_pair tls_server tls_client "${TLS_PORT}" "${WORK_DIR}/iponly" localhost
+check_rejected "TLS rejeita hostname ausente do subjectAltName" $?
 
 echo
 echo "== Resultado =="

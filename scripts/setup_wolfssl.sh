@@ -47,10 +47,16 @@ cd "${SRC_DIR}"
 echo "==> autogen"
 ./autogen.sh
 
-# As duas primeiras não são opcionais: --enable-opensslextra expõe
-# X509_VERIFY_PARAM_set1_ip_asc() e WOLFSSL_IP_ALT_NAME faz o wolfSSL comparar
-# subjectAltName do tipo iPAddress. Sem elas a verificação de identidade do
-# peer não funciona e os clientes se recusam a subir.
+# Verificação de identidade do peer (obrigatório para os clientes subirem):
+#   --enable-opensslextra   expõe X509_VERIFY_PARAM_set1_ip_asc()
+#   -DWOLFSSL_IP_ALT_NAME   faz comparar subjectAltName do tipo iPAddress
+#
+# Exigido pelo libcoap/OSCORE:
+#   --enable-aesccm   AES-CCM-16-64-128 é o AEAD obrigatório do OSCORE
+#   --enable-psk      o backend wolfSSL do libcoap usa as callbacks de PSK
+#   --enable-dtlscid  precisa da opção real, não do macro solto: o libcoap
+#                     compara COAP_DTLS_CID_LENGTH com DTLS_CID_MAX_SIZE, que
+#                     só é definido por esta opção, e falha o build sem ela
 echo "==> configure (prefixo: ${PREFIX})"
 ./configure \
   --prefix="${PREFIX}" \
@@ -58,9 +64,13 @@ echo "==> configure (prefixo: ${PREFIX})"
   --enable-tls13 \
   --enable-dtls \
   --enable-dtls13 \
+  --enable-dtlscid \
+  --enable-aesccm \
+  --enable-psk \
+  --enable-alpn \
   --enable-sni \
   --enable-keylog-export \
-  C_EXTRA_FLAGS="-DWOLFSSL_IP_ALT_NAME -DWOLFSSL_DTLS_CID"
+  C_EXTRA_FLAGS="-DWOLFSSL_IP_ALT_NAME"
 
 echo "==> build"
 make -j"$(nproc)"
@@ -73,7 +83,7 @@ fi
 
 echo
 echo "wolfSSL instalado em ${PREFIX}"
-grep -E "define (WOLFSSL_DTLS13|WOLFSSL_IP_ALT_NAME|OPENSSL_EXTRA)$" \
+grep -E "define (WOLFSSL_DTLS13|WOLFSSL_IP_ALT_NAME|OPENSSL_EXTRA|HAVE_AESCCM|WOLFSSL_DTLS_CID)$" \
   "${PREFIX}/include/wolfssl/options.h" || true
 
 if [[ "${PREFIX}" != "/usr/local" ]]; then

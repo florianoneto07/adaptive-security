@@ -70,6 +70,11 @@ echo "==> autogen"
 # Exigido pelo libcoap/OSCORE:
 #   --enable-aesccm   AES-CCM-16-64-128 é o AEAD obrigatório do OSCORE
 #   --enable-psk      o backend wolfSSL do libcoap usa as callbacks de PSK
+#   --enable-opensslall
+#                     o libcoap referencia wolfSSL_CIPHER_get_cipher_nid() e
+#                     wolfSSL_CTX_set_alpn_select_cb(), ambas compiladas apenas
+#                     sob OPENSSL_ALL. Sem isso o wolfSSL compila, mas o
+#                     libcoap falha no LINK, não na compilação
 #   --enable-dtlscid  Connection ID do DTLS 1.3 (RFC 9146), relevante quando o
 #                     cliente muda de IP/porta — cenário comum em 5G
 #   -DDTLS_CID_MAX_SIZE=8
@@ -83,6 +88,7 @@ echo "==> configure (prefixo: ${PREFIX})"
 ./configure \
   --prefix="${PREFIX}" \
   --enable-opensslextra \
+  --enable-opensslall \
   --enable-tls13 \
   --enable-dtls \
   --enable-dtls13 \

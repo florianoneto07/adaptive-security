@@ -442,6 +442,8 @@ como o cliente a enxerga, e precisa constar do `subjectAltName`.
 | `error while loading shared libraries: libwolfssl.so` | wolfSSL fora de `/usr/local`. | `export LD_LIBRARY_PATH=$HOME/.local/lib` |
 | `DTLS 1.3 não disponível nesta build` | wolfSSL sem `--enable-dtls13`. | `./scripts/setup_wolfssl.sh "$HOME/.local"` |
 | `Build do wolfSSL sem OPENSSL_EXTRA` | Falta `--enable-opensslextra`. | Idem acima. |
+| `invalid preprocessing directive #bad` ao compilar o libcoap | wolfSSL sem `-DDTLS_CID_MAX_SIZE=8`. O macro vive em `internal.h`, que é privado, e o libcoap o lê como 0. | Recompile o wolfSSL com `./scripts/setup_wolfssl.sh`. |
+| `Permission denied` no meio do build do wolfSSL ou do libcoap | Árvore de build com arquivos de root, de um `sudo make install` anterior. | Compile em árvore nova: `WOLFSSL_SRC=$HOME/wolfssl-novo ./scripts/setup_wolfssl.sh "$HOME/.local"` |
 | `Erro ao carregar certs/server.crt` | Certificados não gerados, ou execução fora da raiz do repositório. | Rode `./scripts/generate_certs.sh`, ou aponte `CERT_DIR`. |
 | Timeout no DTLS, sem mensagem | Datagramas bloqueados no caminho. | Libere UDP/4444 no firewall das duas pontas. |
 

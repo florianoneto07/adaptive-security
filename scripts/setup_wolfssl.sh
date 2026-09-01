@@ -14,6 +14,7 @@ set -euo pipefail
 PREFIX="${1:-/usr/local}"
 SRC_DIR="${WOLFSSL_SRC:-${HOME}/wolfssl}"
 WOLFSSL_REPO="https://github.com/wolfSSL/wolfssl.git"
+SRC_VAR="WOLFSSL_SRC"
 
 # Só usa sudo quando o destino não pertence ao usuário.
 if [[ -w "$(dirname "${PREFIX}")" || -w "${PREFIX}" ]]; then
@@ -32,6 +33,21 @@ for tool in git gcc make autoconf automake libtoolize; do
     exit 1
   fi
 done
+
+# Um "sudo make install" anterior deixa objetos de root na árvore de build, e o
+# rebuild seguinte como usuário comum falha com "Permission denied" no meio da
+# compilação, longe da causa. Detecta isso antes de gastar o build inteiro.
+if [[ -d "${SRC_DIR}" ]]; then
+  root_files="$(find "${SRC_DIR}" ! -user "$(id -un)" -print -quit 2>/dev/null)"
+  if [[ -n "${root_files}" ]]; then
+    echo "A árvore ${SRC_DIR} contém arquivos de outro usuário (ex.: ${root_files})." >&2
+    echo "Provavelmente sobra de um 'sudo make install' anterior." >&2
+    echo "Compile numa árvore limpa:" >&2
+    echo "  ${0##*/} usa a variável ${SRC_VAR}; aponte-a para um diretório novo," >&2
+    echo "  por exemplo: ${SRC_VAR}=\$HOME/$(basename "${SRC_DIR}")-novo $0 $*" >&2
+    exit 1
+  fi
+fi
 
 if [[ -d "${SRC_DIR}/.git" ]]; then
   echo "==> Reutilizando ${SRC_DIR}"
@@ -54,9 +70,15 @@ echo "==> autogen"
 # Exigido pelo libcoap/OSCORE:
 #   --enable-aesccm   AES-CCM-16-64-128 é o AEAD obrigatório do OSCORE
 #   --enable-psk      o backend wolfSSL do libcoap usa as callbacks de PSK
-#   --enable-dtlscid  precisa da opção real, não do macro solto: o libcoap
-#                     compara COAP_DTLS_CID_LENGTH com DTLS_CID_MAX_SIZE, que
-#                     só é definido por esta opção, e falha o build sem ela
+#   --enable-dtlscid  Connection ID do DTLS 1.3 (RFC 9146), relevante quando o
+#                     cliente muda de IP/porta — cenário comum em 5G
+#   -DDTLS_CID_MAX_SIZE=8
+#                     o wolfSSL define esse limite em internal.h, que é privado
+#                     e não é instalado; o libcoap compara COAP_DTLS_CID_LENGTH
+#                     contra ele e, sem enxergá-lo, o pré-processador o toma
+#                     como 0 e aborta o build. Passar pelo C_EXTRA_FLAGS o
+#                     grava no options.h, onde o libcoap consegue vê-lo.
+#                     O valor 8 é o recomendado em src/coap_wolfssl.c
 echo "==> configure (prefixo: ${PREFIX})"
 ./configure \
   --prefix="${PREFIX}" \
@@ -70,7 +92,7 @@ echo "==> configure (prefixo: ${PREFIX})"
   --enable-alpn \
   --enable-sni \
   --enable-keylog-export \
-  C_EXTRA_FLAGS="-DWOLFSSL_IP_ALT_NAME"
+  C_EXTRA_FLAGS="-DWOLFSSL_IP_ALT_NAME -DDTLS_CID_MAX_SIZE=8"
 
 echo "==> build"
 make -j"$(nproc)"
@@ -83,7 +105,7 @@ fi
 
 echo
 echo "wolfSSL instalado em ${PREFIX}"
-grep -E "define (WOLFSSL_DTLS13|WOLFSSL_IP_ALT_NAME|OPENSSL_EXTRA|HAVE_AESCCM|WOLFSSL_DTLS_CID)$" \
+grep -E "define (WOLFSSL_DTLS13|WOLFSSL_IP_ALT_NAME|OPENSSL_EXTRA|HAVE_AESCCM|WOLFSSL_DTLS_CID|DTLS_CID_MAX_SIZE)" \
   "${PREFIX}/include/wolfssl/options.h" || true
 
 if [[ "${PREFIX}" != "/usr/local" ]]; then

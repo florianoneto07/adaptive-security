@@ -1,0 +1,16 @@
+# Certificados e chaves gerados localmente (nunca versionar material criptográfico)
+certs/*
+!certs/.gitkeep
+
+# Artefatos de compilação
+build/
+*.o
+*.d
+tls_server
+tls_client
+dtls_server
+dtls_client
+
+# Diversos
+*.log
+*.swp

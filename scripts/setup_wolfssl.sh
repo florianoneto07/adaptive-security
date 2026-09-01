@@ -22,7 +22,9 @@ else
   SUDO="sudo"
 fi
 
-for tool in git gcc make autoconf automake libtool; do
+# libtoolize, não "libtool": o autogen.sh do wolfSSL usa o primeiro, e o
+# wrapper libtool vem noutro pacote (libtool-bin) que não é necessário.
+for tool in git gcc make autoconf automake libtoolize; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
     echo "Faltando: ${tool}" >&2
     echo "Instale as dependências antes:" >&2

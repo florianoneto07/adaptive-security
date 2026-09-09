@@ -1,30 +1,36 @@
-# Adaptive Security Prototype - build TLS 1.3 / DTLS 1.3 (wolfSSL)
+# Testbed de perfis de segurança fixos por classe de aplicação UAV.
 #
 # Uso:
-#   make                        compila todos os binários em build/
-#   make tls_server             compila um alvo específico
-#   make WOLFSSL_DIR=/opt/ws    usa um wolfSSL fora do prefixo padrão
+#   make                        compila os quatro canais e os binários legados
+#   make channels               só os quatro canais
+#   make c1                     só o canal C1 (idem c2, c3, c4)
+#   make legacy                 só os binários TLS/DTLS originais
+#   make WOLFSSL_DIR=~/.local   usa um wolfSSL fora do prefixo padrão
+#   make check                  confere as opções da build do wolfSSL
+#   make keys                   gera uma chave por canal em keys/
 #   make certs                  gera os certificados de teste em certs/
 #   make clean                  remove os artefatos de compilação
+#
+# Os quatro canais autenticam por PSK e NÃO usam certificado. Os binários
+# legados (tls_*, dtls_*) continuam com X.509 e seguem intocados; certs/ existe
+# para eles.
 
 CC    ?= cc
 BUILD := build
 
-# Localização do wolfSSL. Se WOLFSSL_DIR for informado, ele tem precedência;
-# caso contrário tenta-se pkg-config e, por fim, o prefixo padrão de
-# "make install" do wolfSSL (/usr/local).
+# Localização do wolfSSL. WOLFSSL_DIR tem precedência; senão pkg-config; senão
+# o prefixo padrão de "make install".
 WOLFSSL_DIR ?=
 ifneq ($(WOLFSSL_DIR),)
   WOLFSSL_CFLAGS := -I$(WOLFSSL_DIR)/include
   WOLFSSL_LIBS   := -L$(WOLFSSL_DIR)/lib -lwolfssl
+  WOLFSSL_PREFIX := $(WOLFSSL_DIR)
 else
   WOLFSSL_CFLAGS := $(shell pkg-config --cflags wolfssl 2>/dev/null || echo -I/usr/local/include)
   WOLFSSL_LIBS   := $(shell pkg-config --libs   wolfssl 2>/dev/null || echo -L/usr/local/lib -lwolfssl)
+  WOLFSSL_PREFIX := $(shell pkg-config --variable=prefix wolfssl 2>/dev/null || echo /usr/local)
 endif
 
-# CFLAGS/LDFLAGS pertencem ao usuário e podem ser sobrescritos na linha de
-# comando. As flags obrigatórias ficam em ALL_CFLAGS para não serem perdidas
-# quando o make recebe CFLAGS=... (variável de linha de comando ignora "+=").
 CFLAGS  ?= -O2 -g -Wall -Wextra -Wpedantic
 LDFLAGS ?=
 
@@ -35,15 +41,50 @@ COMMON_HDR  := common/adaptive_security.h
 
 SERVER_BINS := tls_server dtls_server
 CLIENT_BINS := tls_client dtls_client
-BINS        := $(SERVER_BINS) $(CLIENT_BINS)
-TARGETS     := $(addprefix $(BUILD)/,$(BINS))
+LEGACY_BINS := $(SERVER_BINS) $(CLIENT_BINS)
+LEGACY_TGTS := $(addprefix $(BUILD)/,$(LEGACY_BINS))
 
-.PHONY: all clean certs $(BINS)
+CHANNELS := c1_control c2_telemetry c3_media c4_bulk
 
-all: $(TARGETS)
+.PHONY: all channels legacy check keys certs clean $(CHANNELS) $(LEGACY_BINS) \
+        c1 c2 c3 c4
 
-# Atalhos: "make tls_server" em vez de "make build/tls_server".
-$(BINS): %: $(BUILD)/%
+all: check legacy channels
+
+# ---------------------------------------------------------------------------
+# Verificação da build do wolfSSL
+# ---------------------------------------------------------------------------
+
+# Roda antes de qualquer compilação. Uma build sem PSK ou sem SRTP compila os
+# canais sem erro e só falha no link ou, pior, em execução — onde o sintoma é
+# indistinguível de chave divergente entre as VMs.
+check:
+	@./scripts/check_wolfssl.sh "$(WOLFSSL_PREFIX)"
+
+# ---------------------------------------------------------------------------
+# Canais
+# ---------------------------------------------------------------------------
+
+channels: $(CHANNELS)
+
+# Cada canal é um par de binários independente (R1): sobe, roda e é derrubado
+# sem afetar os outros. O Makefile de cada um vive em channels/<canal>/.
+$(CHANNELS):
+	@$(MAKE) --no-print-directory -C channels/$@ WOLFSSL_DIR="$(WOLFSSL_DIR)"
+
+# Atalhos curtos.
+c1: c1_control
+c2: c2_telemetry
+c3: c3_media
+c4: c4_bulk
+
+# ---------------------------------------------------------------------------
+# Binários legados (TLS/DTLS com certificado, portas 4433 e 4444)
+# ---------------------------------------------------------------------------
+
+legacy: $(LEGACY_TGTS)
+
+$(LEGACY_BINS): %: $(BUILD)/%
 
 $(addprefix $(BUILD)/,$(SERVER_BINS)): $(BUILD)/%: server/%.c $(COMMON_HDR) | $(BUILD)
 	$(CC) $(ALL_CFLAGS) -o $@ $< $(LDFLAGS) $(ALL_LDLIBS)
@@ -54,8 +95,18 @@ $(addprefix $(BUILD)/,$(CLIENT_BINS)): $(BUILD)/%: client/%.c $(COMMON_HDR) | $(
 $(BUILD):
 	mkdir -p $(BUILD)
 
+# ---------------------------------------------------------------------------
+# Material criptográfico
+# ---------------------------------------------------------------------------
+
+keys:
+	./scripts/generate_keys.sh
+
 certs:
 	./scripts/generate_certs.sh
 
 clean:
 	rm -rf $(BUILD)
+	@for c in $(CHANNELS); do \
+	  $(MAKE) --no-print-directory -C channels/$$c clean WOLFSSL_DIR="$(WOLFSSL_DIR)" 2>/dev/null || true; \
+	done

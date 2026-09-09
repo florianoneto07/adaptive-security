@@ -6,6 +6,14 @@ certs/*
 oscore/*
 !oscore/.gitkeep
 
+# Chaves pré-compartilhadas dos canais: um segredo por classe de aplicação
+keys/*
+!keys/.gitkeep
+
+# Resultados de execução: CSVs, manifestos e capturas
+results/*
+!results/.gitkeep
+
 # Artefatos de compilação
 build/
 *.o

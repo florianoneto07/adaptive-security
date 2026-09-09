@@ -164,10 +164,34 @@ Para destravar:
 sudo setcap cap_net_raw,cap_net_admin+eip /usr/bin/tcpdump
 ```
 
+### Defeito no modo `--role server`, encontrado na primeira campanha real
+
+Na primeira execução entre as duas VMs, `telemetry` passou 10/10 enquanto
+`media` e `bulk` falharam em todas as repetições e `control` só funcionou na
+primeira.
+
+A causa era estrutural no orquestrador: no papel de servidor, os canais subiam
+**em sequência**, esperando cada servidor terminar antes de subir o próximo. O
+servidor de comando e controle atende uma associação e sai — daí `control`
+funcionar só na repetição 1. Em seguida subia o de telemetria, que atende em
+laço contínuo e nunca termina, e a fila parava ali: os servidores de mídia e
+volumoso jamais chegaram a escutar. No cliente isso apareceu como
+`error state on socket` no UDP e `connection refused` no TCP.
+
+Servidores de canais independentes precisam coexistir, não se revezar. O modo
+`--role server` passou a subir todos em paralelo, persistentes (`-k`), com as
+métricas indo para `<run>/server/` em vez de por repetição — o processo é um só
+para toda a campanha. Validado em loopback: 4 canais × 3 repetições, 12/12.
+
+Junto disso, o Ctrl+C passou a abortar a campanha em vez de apenas interromper
+o canal em andamento e seguir para o próximo.
+
 ### Só loopback, nunca entre as duas VMs
 
-Todos os testes rodaram em `127.0.0.1` nesta VM. O caminho `--role server` /
-`--role client` está implementado mas **não foi executado entre máquinas**.
+O par `--role server` / `--role client` foi exercitado entre as duas VMs uma
+vez, o que revelou o defeito de serialização descrito acima; depois da correção,
+só foi revalidado em loopback. **A campanha completa entre máquinas ainda não
+rodou até o fim.**
 Duas coisas que só aparecem lá: MTU real e o comportamento do C3 quando o
 pacote SRTP de 1228 B encontra a MTU de 1500 com cabeçalhos.
 

@@ -223,6 +223,7 @@ fi
 
 SERVER_PIDS=()
 TCPDUMP_PIDS=()
+STOP=0
 
 cleanup() {
   local pid
@@ -234,7 +235,14 @@ cleanup() {
   done
   cleanup_netem
 }
-trap cleanup EXIT INT TERM
+on_interrupt() {
+  STOP=1
+  warn ""
+  warn "Interrompido. Encerrando os canais em andamento..."
+}
+
+trap cleanup EXIT
+trap on_interrupt INT TERM
 
 # ---------------------------------------------------------------------------
 # Execução de um canal
@@ -311,11 +319,6 @@ run_channel() {
       warn "  cliente de ${name} falhou (rc=${rc}):"
       tail -5 "${client_log}" | sed 's/^/    /' >&2
     fi
-  else
-    # Papel só de servidor: espera o cliente remoto terminar, ou o operador.
-    log "  servidor de ${name} no ar na porta ${port}. Ctrl+C encerra."
-    wait "${server_pid}" 2>/dev/null
-    rc=$?
   fi
 
   # --- derrubada ------------------------------------------------------------
@@ -346,12 +349,87 @@ run_channel() {
 declare -A CHANNEL_OK CHANNEL_FAIL
 for c in "${CHANNELS[@]}"; do CHANNEL_OK["${c}"]=0; CHANNEL_FAIL["${c}"]=0; done
 
+# ---------------------------------------------------------------------------
+# Papel de servidor: todos os canais no ar, em PARALELO
+# ---------------------------------------------------------------------------
+#
+# Os servidores precisam coexistir, não se revezar. Um canal é independente do
+# outro (R1), e o cliente percorre os quatro dentro de cada repetição — se os
+# servidores subissem em fila, esperando cada um terminar, o canal de telemetria
+# (que atende indefinidamente, por natureza) seguraria a fila para sempre e os
+# servidores de mídia e volumoso nunca chegariam a escutar. O sintoma no cliente
+# é "error state on socket" no UDP e "connection refused" no TCP.
+#
+# Ficam persistentes (-k) para atender as repetições sucessivas do cliente. O
+# servidor de telemetria não tem essa opção porque já atende em laço contínuo.
+#
+# As métricas do servidor vão para <run>/server/, e não por repetição: o
+# processo é um só para toda a campanha.
+if [[ "${ROLE}" == "server" ]]; then
+  SRV_DIR="${OUT_DIR}/server"
+  mkdir -p "${SRV_DIR}"
+
+  for c in "${CHANNELS[@]}"; do
+    IFS=: read -r _ slug prefix port <<<"$(spec_for "${c}")"
+    port=$((port + PORT_OFFSET))
+
+    srv_args=(-p "${port}" -o "${SRV_DIR}")
+    [[ "${c}" != "telemetry" ]] && srv_args+=(-k)
+
+    if [[ "${CAPTURE}" -eq 1 ]]; then
+      proto="udp"; [[ "${c}" == "bulk" ]] && proto="tcp"
+      tcpdump -i any -w "${SRV_DIR}/${slug}.pcap" -U "${proto} port ${port}" \
+        >"${SRV_DIR}/${slug}_tcpdump.log" 2>&1 &
+      TCPDUMP_PIDS+=($!)
+    fi
+
+    "./build/${prefix}_server" "${srv_args[@]}" \
+      >"${SRV_DIR}/${slug}_server.log" 2>&1 &
+    SERVER_PIDS+=($!)
+    CHANNEL_OK["${c}"]=1
+  done
+
+  sleep 1
+  log "Servidores no ar:"
+  ok_count=0
+  for c in "${CHANNELS[@]}"; do
+    IFS=: read -r _ slug prefix port <<<"$(spec_for "${c}")"
+    port=$((port + PORT_OFFSET))
+    if grep -q "aguardando" "${SRV_DIR}/${slug}_server.log" 2>/dev/null; then
+      printf '  %-10s porta %s\n' "${c}" "${port}"
+      ok_count=$((ok_count + 1))
+    else
+      printf '  %-10s porta %s  NAO SUBIU\n' "${c}" "${port}"
+      sed 's/^/      /' "${SRV_DIR}/${slug}_server.log" >&2
+      CHANNEL_OK["${c}"]=0
+      CHANNEL_FAIL["${c}"]=1
+    fi
+  done
+
+  if [[ "${ok_count}" -eq 0 ]]; then
+    warn "Nenhum servidor subiu."
+    exit 1
+  fi
+
+  log ""
+  log "Rode a campanha na VM cliente. Ctrl+C encerra os servidores."
+  while [[ "${STOP}" -eq 0 ]]; do
+    sleep 1
+  done
+  log ""
+  log "Encerrando. Métricas do servidor em ${SRV_DIR}"
+
+  REPEAT=0   # não há repetições do lado servidor; pula o laço abaixo
+fi
+
 for rep in $(seq 1 "${REPEAT}"); do
+  [[ "${STOP}" -eq 1 ]] && break
   REP_DIR="$(printf '%s/rep%02d' "${OUT_DIR}" "${rep}")"
   mkdir -p "${REP_DIR}"
   log "--- repetição ${rep}/${REPEAT} ---"
 
   for c in "${CHANNELS[@]}"; do
+    [[ "${STOP}" -eq 1 ]] && break
     printf '  %-10s ' "${c}"
     if run_channel "${c}" "${REP_DIR}"; then
       printf 'ok\n'

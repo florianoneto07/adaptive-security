@@ -184,8 +184,11 @@ def main():
         if not d.is_dir():
             sys.exit(f"Diretório não encontrado: {d}")
 
+    # None quando nenhum diretório traz manifesto — caso de uma campanha
+    # interrompida antes do fim, em que os dados existem mas o manifesto não
+    # chegou a ser escrito.
     manifest = next((d / "manifest.json" for d in args.run_dir
-                     if (d / "manifest.json").exists()), args.run_dir[0])
+                     if (d / "manifest.json").is_file()), None)
     data = collect(args.run_dir)
     rows = [r for slug, label, transport in CHANNELS
             if (r := analyse(slug, label, transport, data[slug])) is not None]
@@ -195,14 +198,20 @@ def main():
                  + ", ".join(str(d) for d in args.run_dir))
 
     print(f"Execução: {', '.join(d.name for d in args.run_dir)}")
-    if manifest.exists():
+    if manifest is not None:
         import json
         m = json.loads(manifest.read_text())
         env = m.get("ambiente", {})
-        print(f"  netem={m.get('netem')}  wolfSSL={env.get('wolfssl')}  "
+        netem = m.get("netem")
+        if isinstance(netem, dict):
+            netem = netem.get("efetivo", "?")
+        print(f"  netem={netem}  wolfSSL={env.get('wolfssl')}  "
               f"libcoap={env.get('libcoap')}  kernel={env.get('kernel')}")
         if m.get("git", {}).get("dirty"):
             print("  ATENÇÃO: árvore git com alterações não commitadas")
+    else:
+        print("  ATENÇÃO: sem manifest.json — campanha interrompida antes do fim.")
+        print("  Ambiente e parâmetros não ficaram registrados nesta execução.")
     print()
 
     hdr = (f"{'CANAL':<14}{'PERFIL':<22}{'REPS':>5}{'MSGS':>9}"

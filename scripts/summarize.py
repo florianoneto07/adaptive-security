@@ -253,6 +253,19 @@ def main():
         print("  das duas VMs não são sincronizados: use as DIFERENÇAS entre")
         print("  percentis (p99 - p50), não os valores absolutos.")
 
+    # Razão de entrega acima de 100% não é medição, é desencontro de contagem:
+    # o servidor viu mais repetições do que o cliente registrou, tipicamente
+    # porque a campanha foi interrompida entre o fim de uma transferência e a
+    # gravação do resumo do cliente.
+    for r in rows:
+        if r["entrega_pct"] is not None and r["entrega_pct"] > 100.5:
+            print()
+            print(f"  {r['canal']}: entrega de {r['entrega_pct']:.1f}% — acima de 100%.")
+            print("  O servidor contabilizou mais do que o cliente registrou: as duas")
+            print("  pontas cobrem números diferentes de repetições. Campanha")
+            print("  interrompida; este canal não é comparável com os demais.")
+            r["entrega_pct"] = None
+
     notas = []
     if any(r["overhead_b"] is None for r in rows):
         notas.append("overhead vazio: canal sem contadores de fio (C2/libcoap); "

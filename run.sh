@@ -85,6 +85,23 @@ spec_for() {
   return 1
 }
 
+# Interface da rota padrão: onde o netem age.
+netem_iface() {
+  ip route show default 2>/dev/null | awk '/default/ {print $5; exit}'
+}
+
+# Interface a capturar. Tráfego para o próprio host não passa pela placa de
+# rede: capturar na interface externa num teste de loopback grava zero pacotes,
+# em silêncio. No papel de servidor não há host de destino, e o que interessa é
+# a interface externa.
+capture_iface() {
+  [[ "${ROLE}" == "server" ]] && { local i; i="$(netem_iface)"; printf '%s' "${i:-any}"; return; }
+  case "${HOST}" in
+    127.0.0.1|localhost|::1) printf 'lo' ;;
+    *) local i; i="$(netem_iface)"; printf '%s' "${i:-any}" ;;
+  esac
+}
+
 log()  { printf '%s\n' "$*"; }
 warn() { printf '%s\n' "$*" >&2; }
 
@@ -307,7 +324,8 @@ run_channel() {
     local proto="udp"
     [[ "${name}" == "bulk" ]] && proto="tcp"
     pcap="${rep_dir}/${slug}.pcap"
-    tcpdump -i any -w "${pcap}" -U "${proto} port ${port}" \
+    cap_if="$(capture_iface)"
+    tcpdump -i "${cap_if}" -w "${pcap}" -U "${proto} port ${port}" \
       >"${rep_dir}/${slug}_tcpdump.log" 2>&1 &
     tcpdump_pid=$!
     TCPDUMP_PIDS+=("${tcpdump_pid}")
@@ -444,7 +462,13 @@ if [[ "${ROLE}" == "server" ]]; then
 
     if [[ "${CAPTURE}" -eq 1 ]]; then
       proto="udp"; [[ "${c}" == "bulk" ]] && proto="tcp"
-      tcpdump -i any -w "${SRV_DIR}/${slug}.pcap" -U "${proto} port ${port}" \
+      # Na interface da rota padrão, não em "any": capturar em "any" grava o
+      # pseudo-cabeçalho LINUX_SLL2 de 20 bytes no lugar dos 14 do Ethernet, e
+      # em loopback ainda duplica cada pacote. Sem interface conhecida, cai
+      # para "any" — scripts/pcap_bytes.py desconta o cabeçalho correto de
+      # qualquer forma.
+      cap_if="$(capture_iface)"
+      tcpdump -i "${cap_if}" -w "${SRV_DIR}/${slug}.pcap" -U "${proto} port ${port}" \
         >"${SRV_DIR}/${slug}_tcpdump.log" 2>&1 &
       TCPDUMP_PIDS+=($!)
     fi
@@ -572,10 +596,6 @@ netem_effective() {
   # fariam duas execuções idênticas parecerem diferentes.
   printf '%s' "${qdisc}" |
     sed -E 's/^qdisc netem [0-9a-f]+: root refcnt [0-9]+ //; s/ seed [0-9]+//; s/limit [0-9]+ //'
-}
-
-netem_iface() {
-  ip route show default 2>/dev/null | awk '/default/ {print $5; exit}'
 }
 
 NETEM_DESC="$(netem_effective)"

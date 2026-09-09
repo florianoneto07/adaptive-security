@@ -281,6 +281,37 @@ marca de tempo do emissor e sua própria chegada; como os relógios das duas VMs
 não são sincronizados, o valor carrega um deslocamento constante desconhecido.
 **Use as diferenças entre percentis (p99 − p50), não os valores absolutos.**
 
+### Bytes no fio pela captura
+
+O canal C2 não tem contadores internos, então a captura é a única fonte de bytes
+no fio para o OSCORE. Rode a campanha com `--capture` e depois:
+
+```bash
+./scripts/pcap_bytes.py results/<run_id>/server/*.pcap
+```
+
+```
+ARQUIVO                 ENLACE           PACOTES    BYTES IP+  MÉDIA/PKT
+c2_telemetry.pcap       Ethernet             420        21420       51.0
+```
+
+`BYTES IP+` desconta o cabeçalho de enlace, ficando comparável com os contadores
+internos dos outros canais, que enxergam a partir do IP. Some 28 B por datagrama
+UDP (ou 40 B por segmento TCP) aos contadores internos para comparar com a
+captura:
+
+```
+contadores + 28 × pacotes  ≈  bytes do pcap
+```
+
+Numa campanha real de 6,5 MB no C1, as duas medições ficaram a 0,036% uma da
+outra — a diferença são os pacotes que o tcpdump perde ao iniciar e ao encerrar.
+Vale como verificação independente da instrumentação.
+
+Uma observação sobre volume: uma campanha de dez repetições com `--capture`
+produz centenas de megabytes por canal de mídia e de transferência volumosa.
+Apague os pcaps que já foram processados, ou capture só nos canais que precisa.
+
 ### Agregando as repetições
 
 Comparar 40 arquivos `.summary` a olho não escala. O agregador produz uma tabela

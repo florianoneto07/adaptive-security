@@ -229,6 +229,28 @@ correspondente porque não retransmitem dados de aplicação: no DTLS, perda é
 perda; no TCP, a retransmissão acontece abaixo da aplicação e não refaz a
 cifragem.
 
+### Nove de dez repetições do C2 perdidas na primeira campanha com netem
+
+A campanha reportou `telemetry 10 ok, 0 falhas`, mas ao agregar os resultados
+apenas a repetição 1 tinha amostras de latência: as outras nove enviaram 30
+leituras cada e não receberam nenhuma resposta.
+
+A causa foi o número de sequência do OSCORE. Cada execução do cliente criava um
+contexto novo e recomeçava a numeração do zero; o servidor, persistente para
+toda a campanha, recusava como repetição e respondia `4.01`. O servidor estava
+certo: reusar número de sequência com o mesmo par de chaves repete o nonce do
+AEAD.
+
+Duas correções. O cliente passou a persistir o Sender Sequence Number em
+`keys/c2.seq` e a retomar dele, que é o mecanismo do Apêndice B.1.1 da RFC 8613
+e é suportado pelo libcoap via `coap_new_oscore_conf()`. E o cliente passou a
+falhar quando enviou tudo sem receber nada — antes retornava sucesso, e foi por
+isso que uma campanha inteira passou por boa.
+
+Vale registrar o que este episódio custou: o defeito não apareceu no canal, nem
+no log do orquestrador, apenas na tabela agregada. Sem o agregador ele teria ido
+para a tese.
+
 ### O overhead medido não bate com o citado no enunciado
 
 | Canal | Enunciado | Medido |

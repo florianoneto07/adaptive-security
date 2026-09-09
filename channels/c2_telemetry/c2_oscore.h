@@ -126,6 +126,71 @@ static inline size_t c2_oscore_conf_text(const unsigned char key[AS_PSK_LEN],
  * a mensagem já em stderr. O chamador não precisa liberar: as funções do
  * libcoap que o recebem assumem a posse.
  */
+/*
+ * Persistência do Sender Sequence Number (RFC 8613, Apêndice B.1.1).
+ *
+ * Cada execução do cliente cria um contexto OSCORE novo e recomeçaria a
+ * numeração do zero. O servidor, que guarda a última sequência vista daquele
+ * Sender ID, recusa isso como repetição e responde 4.01 — corretamente, porque
+ * reusar número de sequência com o mesmo par de chaves repete o nonce do AEAD,
+ * o que é uma falha criptográfica, não um capricho de protocolo.
+ *
+ * Numa campanha de dez repetições isso invalidava nove delas.
+ *
+ * O número é salvo em arquivo a cada mensagem e retomado na execução seguinte.
+ * Não é segredo — é estado do contexto — mas acompanha a chave, porque só faz
+ * sentido em relação a ela: trocar a chave sem apagar este arquivo é inofensivo,
+ * apagar este arquivo sem trocar a chave é que traria o problema de volta.
+ */
+static char c2_seq_path[512];
+
+static inline int c2_save_seq_num(uint64_t sender_seq_num, void *param)
+{
+    FILE *f;
+
+    (void)param;
+
+    if (c2_seq_path[0] == '\0')
+        return 1;
+
+    f = fopen(c2_seq_path, "w");
+    if (f == NULL)
+        return 0;
+    fprintf(f, "%llu\n", (unsigned long long)sender_seq_num);
+    fclose(f);
+    return 1;
+}
+
+/*
+ * Retoma de onde a execução anterior parou, com uma unidade de margem: o valor
+ * gravado é o último USADO, e reaproveitá-lo repetiria o nonce.
+ */
+static inline uint64_t c2_load_seq_num(void)
+{
+    unsigned long long v = 0;
+    FILE *f;
+
+    if (c2_seq_path[0] == '\0')
+        return 0;
+
+    f = fopen(c2_seq_path, "r");
+    if (f == NULL)
+        return 0;
+    if (fscanf(f, "%llu", &v) != 1)
+        v = 0;
+    fclose(f);
+
+    return v > 0 ? (uint64_t)v + 1 : 0;
+}
+
+/* Define onde o número de sequência é guardado. dir é o diretório das chaves. */
+static inline void c2_seq_file_init(const char *dir, const char *basename)
+{
+    if (dir == NULL || dir[0] == '\0')
+        dir = "keys";
+    snprintf(c2_seq_path, sizeof(c2_seq_path), "%s/%s", dir, basename);
+}
+
 static inline coap_oscore_conf_t *c2_oscore_conf(const unsigned char key[AS_PSK_LEN],
                                                  int is_server)
 {
@@ -144,7 +209,16 @@ static inline coap_oscore_conf_t *c2_oscore_conf(const unsigned char key[AS_PSK_
     conf_mem.s = (const uint8_t *)text;
     conf_mem.length = len;
 
-    conf = coap_new_oscore_conf(conf_mem, NULL, NULL, 0);
+    /*
+     * Só o cliente persiste o número de sequência: é ele que reinicia a cada
+     * repetição da campanha. O servidor mantém o estado enquanto vive, e a
+     * janela anti-replay cuida do resto.
+     */
+    if (is_server)
+        conf = coap_new_oscore_conf(conf_mem, NULL, NULL, 0);
+    else
+        conf = coap_new_oscore_conf(conf_mem, c2_save_seq_num, NULL,
+                                    c2_load_seq_num());
     memset(text, 0, sizeof(text));
 
     if (conf == NULL)

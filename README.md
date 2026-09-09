@@ -349,6 +349,24 @@ Todos são opção de linha de comando.
 | netem `handover` | correlação de 25% | aproxima perda em rajada; o netem sem correlação distribuiria a perda uniformemente |
 | PSK | 32 bytes | casa com a força do AES-256-GCM usado nos quatro canais |
 
+## Número de sequência do C2 entre execuções
+
+O canal C2 grava `keys/c2.seq` com o Sender Sequence Number do OSCORE e retoma
+dele na execução seguinte (RFC 8613, Apêndice B.1.1).
+
+Sem isso, cada execução do cliente recomeçaria a numeração do zero e o servidor
+— que guarda a última sequência vista daquele Sender ID — recusaria tudo com
+`4.01`. Não é rigor excessivo do protocolo: reusar número de sequência com o
+mesmo par de chaves repete o nonce do AEAD, o que quebra a cifra.
+
+Consequências práticas:
+
+- **Não apague `keys/c2.seq` sem trocar a chave do canal.** Apagar só o arquivo
+  faz o cliente recomeçar do zero contra um servidor que ainda lembra das
+  sequências antigas, e o canal volta a ser recusado.
+- Ao gerar chaves novas, apague o arquivo junto — ele perde o sentido.
+- Se o C2 falhar com `4.01 — contexto OSCORE recusou a sequência`, é isto.
+
 ## Perfil fixo, sem fallback (R2)
 
 Se o perfil configurado falhar, o canal falha em voz alta e **não** degrada

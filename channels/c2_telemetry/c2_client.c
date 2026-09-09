@@ -217,6 +217,13 @@ int main(int argc, char **argv)
         goto out;
     }
 
+    /*
+     * O número de sequência do OSCORE fica ao lado da chave do canal: cada
+     * execução do cliente retoma de onde a anterior parou, em vez de recomeçar
+     * do zero e ser recusada pelo servidor como repetição.
+     */
+    c2_seq_file_init(getenv("AS_KEY_DIR"), "c2.seq");
+
     /* R2: sem contexto OSCORE o canal não sobe — não há CoAP em claro aqui. */
     oscore_conf = c2_oscore_conf(key, 0);
     memset(key, 0, sizeof(key));
@@ -376,7 +383,21 @@ int main(int argc, char **argv)
            "%llu falhas.\n",
            (unsigned long long)g_seq, (unsigned long long)g_responses,
            (unsigned long long)g_retx, (unsigned long long)g_nacks);
-    rc = 0;
+
+    /*
+     * R2: um canal que enviou tudo e não recebeu nada falhou, e precisa dizer
+     * isso. Antes retornava sucesso, e uma campanha inteira era marcada como
+     * "ok" com nove repetições de dez sem uma única resposta — o defeito só
+     * apareceu ao agregar os resultados.
+     */
+    if (g_seq > 0 && g_responses == 0) {
+        fprintf(stderr,
+                "Canal %s: nenhuma das %llu leituras foi respondida.\n",
+                profile->slug, (unsigned long long)g_seq);
+        rc = 1;
+    } else {
+        rc = 0;
+    }
 
 out:
     if (g_metrics != NULL)

@@ -58,13 +58,34 @@ if [[ -d "${SRC_DIR}" ]]; then
   fi
 fi
 
-if [[ -d "${SRC_DIR}/.git" ]]; then
-  echo "==> Reutilizando ${SRC_DIR}"
-  git -C "${SRC_DIR}" fetch --depth 1 origin
-  git -C "${SRC_DIR}" reset --hard origin/HEAD
-else
-  echo "==> Clonando o libcoap em ${SRC_DIR}"
-  git clone --depth 1 "${LIBCOAP_REPO}" "${SRC_DIR}"
+# Commit fixo, e não um branch. Com "origin/HEAD" cada pessoa que clonasse este
+# repositório compilaria contra uma revisão diferente do libcoap, e as métricas
+# coletadas deixariam de ser comparáveis entre si — que é exatamente o que o
+# testbed precisa garantir. Este é o commit contra o qual ele foi validado.
+# Para testar outra revisão, sobrescreva LIBCOAP_COMMIT.
+LIBCOAP_COMMIT="${LIBCOAP_COMMIT:-dbeedd59b4097b3587af2bda5a387f86df97a056}"
+
+if [[ ! -d "${SRC_DIR}/.git" ]]; then
+  echo "==> Preparando ${SRC_DIR}"
+  git init -q "${SRC_DIR}"
+  git -C "${SRC_DIR}" remote add origin "${LIBCOAP_REPO}"
+fi
+
+echo "==> Buscando o libcoap ${LIBCOAP_COMMIT:0:9}"
+# Buscar um commit avulso depende de o servidor permitir; o GitHub permite. Se
+# não permitir, cai para o histórico completo em vez de falhar.
+if ! git -C "${SRC_DIR}" fetch --quiet --depth 1 origin "${LIBCOAP_COMMIT}" 2>/dev/null; then
+  echo "==> Commit avulso recusado pelo servidor; baixando o histórico"
+  git -C "${SRC_DIR}" fetch --quiet origin
+fi
+git -C "${SRC_DIR}" checkout --quiet --detach "${LIBCOAP_COMMIT}"
+
+# Trocar de flags de configure sem limpar deixa objetos compilados sob as
+# opções antigas, e o defeito aparece como símbolo ausente no link de outro
+# projeto — longe da causa.
+if [[ -f "${SRC_DIR}/Makefile" ]]; then
+  echo "==> Limpando a árvore"
+  make -C "${SRC_DIR}" -s distclean >/dev/null 2>&1 || true
 fi
 
 cd "${SRC_DIR}"

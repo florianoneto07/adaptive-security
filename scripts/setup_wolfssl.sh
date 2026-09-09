@@ -49,13 +49,34 @@ if [[ -d "${SRC_DIR}" ]]; then
   fi
 fi
 
-if [[ -d "${SRC_DIR}/.git" ]]; then
-  echo "==> Reutilizando ${SRC_DIR}"
-  git -C "${SRC_DIR}" fetch --depth 1 origin
-  git -C "${SRC_DIR}" reset --hard origin/HEAD
-else
-  echo "==> Clonando o wolfSSL em ${SRC_DIR}"
-  git clone --depth 1 "${WOLFSSL_REPO}" "${SRC_DIR}"
+# Commit fixo, e não um branch. Com "origin/HEAD" cada pessoa que clonasse este
+# repositório compilaria contra uma revisão diferente do wolfSSL, e as métricas
+# coletadas deixariam de ser comparáveis entre si — que é exatamente o que o
+# testbed precisa garantir. Este é o commit contra o qual ele foi validado.
+# Para testar outra revisão, sobrescreva WOLFSSL_COMMIT.
+WOLFSSL_COMMIT="${WOLFSSL_COMMIT:-88c766b6b6a677bc95af8a184128014d24593317}"
+
+if [[ ! -d "${SRC_DIR}/.git" ]]; then
+  echo "==> Preparando ${SRC_DIR}"
+  git init -q "${SRC_DIR}"
+  git -C "${SRC_DIR}" remote add origin "${WOLFSSL_REPO}"
+fi
+
+echo "==> Buscando o wolfSSL ${WOLFSSL_COMMIT:0:9}"
+# Buscar um commit avulso depende de o servidor permitir; o GitHub permite. Se
+# não permitir, cai para o histórico completo em vez de falhar.
+if ! git -C "${SRC_DIR}" fetch --quiet --depth 1 origin "${WOLFSSL_COMMIT}" 2>/dev/null; then
+  echo "==> Commit avulso recusado pelo servidor; baixando o histórico"
+  git -C "${SRC_DIR}" fetch --quiet origin
+fi
+git -C "${SRC_DIR}" checkout --quiet --detach "${WOLFSSL_COMMIT}"
+
+# Trocar de flags de configure sem limpar deixa objetos compilados sob as
+# opções antigas, e o defeito aparece como símbolo ausente no link de outro
+# projeto — longe da causa.
+if [[ -f "${SRC_DIR}/Makefile" ]]; then
+  echo "==> Limpando a árvore"
+  make -C "${SRC_DIR}" -s distclean >/dev/null 2>&1 || true
 fi
 
 cd "${SRC_DIR}"
@@ -67,9 +88,20 @@ echo "==> autogen"
 #   --enable-opensslextra   expõe X509_VERIFY_PARAM_set1_ip_asc()
 #   -DWOLFSSL_IP_ALT_NAME   faz comparar subjectAltName do tipo iPAddress
 #
-# Exigido pelo libcoap/OSCORE:
+# Exigido pelo canal C3 (mídia em tempo real):
+#   --enable-srtp     expõe a extensão use_srtp (RFC 5764) e
+#                     wolfSSL_export_dtls_srtp_keying_material(). Vem
+#                     DESABILITADA por padrão: sem ela os protótipos existem em
+#                     ssl.h, mas ficam sob #ifdef WOLFSSL_SRTP e nenhum símbolo
+#                     SRTP é compilado na biblioteca — o erro aparece no LINK.
+#                     No C3 o DTLS só deriva o material de chave; quem protege
+#                     os pacotes de mídia é o libsrtp2.
+#
+# Exigido pelo libcoap/OSCORE e pelos canais C1/C3/C4:
 #   --enable-aesccm   AES-CCM-16-64-128 é o AEAD obrigatório do OSCORE
-#   --enable-psk      o backend wolfSSL do libcoap usa as callbacks de PSK
+#   --enable-psk      o backend wolfSSL do libcoap usa as callbacks de PSK, e
+#                     os canais C1/C3/C4 autenticam por PSK pura (psk_dhe_ke),
+#                     uma chave distinta por canal
 #   --enable-opensslall
 #                     o libcoap referencia wolfSSL_CIPHER_get_cipher_nid() e
 #                     wolfSSL_CTX_set_alpn_select_cb(), ambas compiladas apenas
@@ -93,6 +125,7 @@ echo "==> configure (prefixo: ${PREFIX})"
   --enable-dtls \
   --enable-dtls13 \
   --enable-dtlscid \
+  --enable-srtp \
   --enable-aesccm \
   --enable-psk \
   --enable-alpn \
@@ -111,7 +144,7 @@ fi
 
 echo
 echo "wolfSSL instalado em ${PREFIX}"
-grep -E "define (WOLFSSL_DTLS13|WOLFSSL_IP_ALT_NAME|OPENSSL_EXTRA|HAVE_AESCCM|WOLFSSL_DTLS_CID|DTLS_CID_MAX_SIZE)" \
+grep -E "define (WOLFSSL_DTLS13|WOLFSSL_IP_ALT_NAME|OPENSSL_EXTRA|HAVE_AESCCM|WOLFSSL_DTLS_CID|DTLS_CID_MAX_SIZE|WOLFSSL_SRTP)" \
   "${PREFIX}/include/wolfssl/options.h" || true
 
 if [[ "${PREFIX}" != "/usr/local" ]]; then

@@ -22,6 +22,7 @@
 #   --out DIR                  raiz dos resultados (padrão: results)
 #   --netem PERFIL             aplica o perfil antes e remove depois
 #   --capture                  grava pcap por canal (exige CAP_NET_RAW)
+#   --allow-stale              mede mesmo com binário mais antigo que o código
 #   --port-offset N            desloca todas as portas, para rodar em paralelo
 #   --list                     lista os canais e sai
 #
@@ -45,6 +46,7 @@ OUT_ROOT="results"
 NETEM_PROFILE=""
 CAPTURE=0
 PORT_OFFSET=0
+ALLOW_STALE=0
 
 # wolfSSL fora de /usr/local exige LD_LIBRARY_PATH em toda execução. Resolver
 # aqui evita que o operador descubra isso como "error while loading shared
@@ -64,6 +66,10 @@ CHANNEL_SPEC=(
   "media:c3_media:c3:5003"
   "bulk:c4_bulk:c4:5004"
 )
+
+# Canais em que o CLIENTE mede ida e volta. O de mídia fica de fora: o fluxo é
+# unidirecional e quem registra o atraso é o receptor.
+CHANNELS_WITH_CLIENT_RTT="control telemetry bulk"
 
 # ---------------------------------------------------------------------------
 # Utilidades
@@ -104,6 +110,7 @@ while [[ $# -gt 0 ]]; do
     --netem)       NETEM_PROFILE="${2:-}"; shift 2 ;;
     --port-offset) PORT_OFFSET="${2:-}"; shift 2 ;;
     --capture)     CAPTURE=1; shift ;;
+    --allow-stale) ALLOW_STALE=1; shift ;;
     --list)
       printf '%-12s %-14s %s\n' CANAL SLUG PORTA
       for e in "${CHANNEL_SPEC[@]}"; do
@@ -164,6 +171,40 @@ for c in "${CHANNELS[@]}"; do
     fi
   fi
 done
+
+# Binário mais antigo que o código que o gera: a campanha rodaria com uma versão
+# diferente da que o manifesto vai registrar, e o resultado seria atribuído ao
+# commit errado. Aconteceu numa campanha de 35 minutos, cujo único sintoma foi
+# uma correção que "não funcionou".
+STALE=()
+for c in "${CHANNELS[@]}"; do
+  IFS=: read -r _ slug prefix _ <<<"$(spec_for "${c}")"
+  for role_bin in server client; do
+    [[ "${ROLE}" == "server" && "${role_bin}" == "client" ]] && continue
+    [[ "${ROLE}" == "client" && "${role_bin}" == "server" ]] && continue
+
+    bin="build/${prefix}_${role_bin}"
+    [[ -f "${bin}" ]] || continue
+
+    while IFS= read -r src; do
+      [[ -n "${src}" && "${src}" -nt "${bin}" ]] && { STALE+=("${bin}"); break; }
+    done < <(printf '%s\n' "channels/${slug}/${prefix}_${role_bin}.c" \
+                            channels/"${slug}"/*.h common/*.c common/*.h)
+  done
+done
+
+if [[ "${#STALE[@]}" -gt 0 ]]; then
+  warn ""
+  warn "Estes binários são mais antigos que o código-fonte:"
+  printf '  %s\n' "${STALE[@]}" >&2
+  warn ""
+  warn "Recompile antes de medir:"
+  warn "  make WOLFSSL_DIR=\"${WOLFSSL_DIR:-\$HOME/.local}\""
+  warn ""
+  warn "Para medir assim mesmo, use --allow-stale."
+  [[ "${ALLOW_STALE}" -eq 1 ]] || exit 1
+  warn "Prosseguindo por --allow-stale."
+fi
 
 # ---------------------------------------------------------------------------
 # Identidade da execução
@@ -346,6 +387,29 @@ run_channel() {
 # Campanha
 # ---------------------------------------------------------------------------
 
+# Um canal pode sair com código de sucesso e não ter trocado mensagem nenhuma.
+# Foi assim que uma campanha inteira de telemetria passou por boa, com nove de
+# dez repetições sem uma única resposta: o binário retornava 0 e o orquestrador
+# acreditava. Esta é a segunda rede: conferir o que o canal de fato produziu,
+# em vez de confiar só no código de saída.
+#
+# Devolve 0 (verdadeiro) quando o canal enviou mensagens e não obteve resposta.
+channel_produced_nothing() {
+  local name="$1" dir="$2" slug f sent samples
+
+  [[ " ${CHANNELS_WITH_CLIENT_RTT} " == *" ${name} "* ]] || return 1
+  [[ "${ROLE}" == "server" ]] && return 1
+
+  IFS=: read -r _ slug _ _ <<<"$(spec_for "${name}")"
+  f="${dir}/${slug}_client.summary"
+  [[ -f "${f}" ]] || return 1
+
+  sent="$(awk -F= '/^msgs_sent=/{print $2}' "${f}")"
+  samples="$(awk -F= '/^rtt_samples=/{print $2}' "${f}")"
+
+  [[ "${sent:-0}" -gt 0 && "${samples:-0}" -eq 0 ]]
+}
+
 declare -A CHANNEL_OK CHANNEL_FAIL
 for c in "${CHANNELS[@]}"; do CHANNEL_OK["${c}"]=0; CHANNEL_FAIL["${c}"]=0; done
 
@@ -435,8 +499,13 @@ for rep in $(seq 1 "${REPEAT}"); do
     [[ "${STOP}" -eq 1 ]] && break
     printf '  %-10s ' "${c}"
     if run_channel "${c}" "${REP_DIR}"; then
-      printf 'ok\n'
-      CHANNEL_OK["${c}"]=$(( ${CHANNEL_OK["${c}"]} + 1 ))
+      if channel_produced_nothing "${c}" "${REP_DIR}"; then
+        printf 'SEM RESPOSTA\n'
+        CHANNEL_FAIL["${c}"]=$(( ${CHANNEL_FAIL["${c}"]} + 1 ))
+      else
+        printf 'ok\n'
+        CHANNEL_OK["${c}"]=$(( ${CHANNEL_OK["${c}"]} + 1 ))
+      fi
     else
       printf 'FALHOU\n'
       CHANNEL_FAIL["${c}"]=$(( ${CHANNEL_FAIL["${c}"]} + 1 ))

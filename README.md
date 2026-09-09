@@ -281,6 +281,35 @@ marca de tempo do emissor e sua própria chegada; como os relógios das duas VMs
 não são sincronizados, o valor carrega um deslocamento constante desconhecido.
 **Use as diferenças entre percentis (p99 − p50), não os valores absolutos.**
 
+### Agregando as repetições
+
+Comparar 40 arquivos `.summary` a olho não escala. O agregador produz uma tabela
+única com os quatro perfis lado a lado:
+
+```bash
+./scripts/summarize.py results/<run_id>
+```
+
+Numa campanha entre as duas VMs, os resultados do cliente e os do servidor ficam
+em máquinas diferentes. Copie um para junto do outro e passe os dois:
+
+```bash
+scp -r [USUARIO]@[IP_DO_SERVIDOR]:~/adaptive-security-prototype/results/<run_servidor> /tmp/
+./scripts/summarize.py results/<run_cliente> /tmp/<run_servidor>
+```
+
+`--csv arquivo.csv` grava a tabela agregada para levar a uma planilha ou gráfico.
+
+A agregação entre repetições usa **mediana**, não média: latência tem cauda
+longa, e uma repetição em que o escalonador atrapalhou deslocaria a média sem
+dizer nada sobre o perfil. Os percentis vêm calculados de dentro de cada
+execução, sobre todas as amostras daquela repetição.
+
+O relatório anota sozinho as três armadilhas de leitura: que o C3 mede atraso
+unidirecional sem relógio comum, que as colunas de percentil do C4 trazem o
+tempo da transferência completa e não latência por mensagem, e que células
+vazias em `CPU/retx` são o resultado, não instrumentação faltando.
+
 ### O manifesto
 
 `results/<run_id>/manifest.json` traz commit git (com marca de árvore suja),

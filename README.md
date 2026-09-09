@@ -145,6 +145,35 @@ Opções principais:
 | `--port-offset N` | `0` | desloca as portas, para execuções em paralelo |
 | `--out DIR` | `results` | raiz dos resultados |
 
+### Campanha completa, as três condições
+
+O caminho recomendado para colher dados de publicação. Roda na VM servidora e
+comanda a cliente por SSH:
+
+```bash
+./campaign.sh --client-ssh lab-client --host [IP_DO_SERVIDOR] --capture
+```
+
+Percorre `clean`, `3gpp-c2` e `handover` em sequência, aplicando e removendo o
+netem **nas duas VMs** a cada condição, e agrega tudo em um único
+`resumo.csv` com uma linha por condição e canal — o formato direto para gráfico.
+
+Antes de começar, confere que as duas VMs estão no mesmo commit e recusa a
+campanha se não estiverem: mais de uma hora de medição atribuída a uma versão
+que só vale para um dos lados não serve para nada. `--dry-run` mostra o plano e
+a estimativa de tempo sem executar.
+
+```
+results/campaign-<timestamp>-<commit>/
+  clean/       servidor/ e cliente/ com CSVs brutos, logs e manifestos
+  3gpp-c2/
+  handover/
+  resumo.csv   uma linha por (condição, canal)
+  campaign.log
+```
+
+Uma campanha completa de dez repetições leva por volta de duas horas.
+
 ### Entre as duas VMs
 
 Na VM servidora (estação de solo):

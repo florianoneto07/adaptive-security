@@ -178,6 +178,12 @@ def main():
                     help="diretório(s) da execução; passe o do cliente e o do "
                          "servidor para mesclá-los")
     ap.add_argument("--csv", type=Path, help="grava a tabela agregada neste arquivo")
+    ap.add_argument("--label", default=None,
+                    help="rótulo da condição (ex.: clean, 3gpp-c2); vira uma "
+                         "coluna no CSV, para empilhar campanhas num gráfico")
+    ap.add_argument("--append", action="store_true",
+                    help="acrescenta ao CSV em vez de sobrescrever, sem repetir "
+                         "o cabeçalho")
     args = ap.parse_args()
 
     for d in args.run_dir:
@@ -282,10 +288,20 @@ def main():
             print(f"  nota: {n}")
 
     if args.csv:
+        if args.label:
+            for r in rows:
+                r["condicao"] = args.label
+            # A condição primeiro: é por ela que os gráficos vão agrupar.
+            rows = [{"condicao": r.pop("condicao"), **r} for r in rows]
+
         keys = list(rows[0].keys())
-        with args.csv.open("w", newline="") as fh:
+        exists = args.csv.exists() and args.csv.stat().st_size > 0
+        mode = "a" if (args.append and exists) else "w"
+
+        with args.csv.open(mode, newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=keys)
-            w.writeheader()
+            if mode == "w":
+                w.writeheader()
             w.writerows(rows)
         print(f"\nTabela agregada em {args.csv}")
 

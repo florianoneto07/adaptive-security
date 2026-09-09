@@ -118,6 +118,39 @@ done
 # Estrutura da campanha
 # ---------------------------------------------------------------------------
 
+# Aplicar o netem exige CAP_NET_ADMIN nos DOIS lados. Descobrir que falta no
+# cliente só ao chegar na segunda condição custa a primeira hora de campanha —
+# foi o que aconteceu. Um teste de um segundo evita isso.
+needs_netem=0
+for c in $(tr ',' ' ' <<< "${CONDITIONS}"); do
+  [[ "${c}" != "clean" ]] && needs_netem=1
+done
+
+if [[ "${needs_netem}" -eq 1 && "${DRY_RUN}" -eq 0 ]]; then
+  log_pre "Conferindo permissão do tc nas duas VMs..."
+  netem_blocked=""
+
+  ./netem.sh 3gpp-c2 >/dev/null 2>&1 || netem_blocked="servidor"
+  ./netem.sh off >/dev/null 2>&1
+
+  run_remote "cd ${CLIENT_DIR} && ./netem.sh 3gpp-c2" >/dev/null 2>&1 ||
+    netem_blocked="${netem_blocked:+${netem_blocked} e }cliente"
+  run_remote "cd ${CLIENT_DIR} && ./netem.sh off" >/dev/null 2>&1
+
+  if [[ -n "${netem_blocked}" ]]; then
+    warn ""
+    warn "O tc não pode aplicar netem em: ${netem_blocked}."
+    warn "As condições degradadas seriam puladas, e só a linha de base seria colhida."
+    warn ""
+    warn "Rode na(s) máquina(s) afetada(s), uma vez:"
+    warn "  sudo setcap cap_net_admin+eip /usr/sbin/tc"
+    warn ""
+    warn "Para colher só a linha de base agora: --conditions clean"
+    exit 1
+  fi
+  log_pre "  ok nas duas"
+fi
+
 CAMPAIGN_ID="campaign-$(date -u +%Y%m%dT%H%M%SZ)-${LOCAL_COMMIT}"
 CAMPAIGN_DIR="${OUT_ROOT}/${CAMPAIGN_ID}"
 CAMPAIGN_LOG="${CAMPAIGN_DIR}/campaign.log"
@@ -178,7 +211,7 @@ clear_netem() {
 
 SERVER_PID=""
 cleanup() {
-  [[ -n "${SERVER_PID}" ]] && kill -INT "${SERVER_PID}" 2>/dev/null
+  [[ -n "${SERVER_PID}" ]] && kill -TERM "${SERVER_PID}" 2>/dev/null
   clear_netem
 }
 trap cleanup EXIT INT TERM
@@ -237,9 +270,12 @@ run_condition() {
   cli_args="--role client --host ${HOST} --duration ${DURATION} --repeat ${REPEAT} --out results/${CAMPAIGN_ID}-${cond}"
   log " rodando o cliente (${REPEAT} repetições)..."
 
+  # Em tee, não redirecionado: sem isso a campanha fica quarenta minutos por
+  # condição sem imprimir nada, e não há como saber se avançou ou travou.
   local cli_rc=0
-  run_remote "cd ${CLIENT_DIR} && ./run.sh ${cli_args} ${CHANNELS}" \
-    > "${cond_dir}/cliente.log" 2>&1 || cli_rc=$?
+  run_remote "cd ${CLIENT_DIR} && ./run.sh ${cli_args} ${CHANNELS}" 2>&1 \
+    | sed 's/^/   | /' | tee -a "${cond_dir}/cliente.log"
+  cli_rc="${PIPESTATUS[0]}"
 
   if [[ "${cli_rc}" -ne 0 ]]; then
     warn " cliente terminou com rc=${cli_rc}; veja ${cond_dir}/cliente.log"
@@ -247,7 +283,12 @@ run_condition() {
   fi
 
   # --- derruba os servidores para que gravem os resumos ---
-  kill -INT "${SERVER_PID}" 2>/dev/null
+  #
+  # SIGTERM, e não SIGINT: um script iniciado em background herda SIGINT
+  # ignorado, e o kill -INT não tinha efeito nenhum — a campanha ficava presa
+  # em wait() indefinidamente depois de o cliente já ter terminado. Custou 40
+  # minutos de espera numa condição que já estava pronta.
+  kill -TERM "${SERVER_PID}" 2>/dev/null
   wait "${SERVER_PID}" 2>/dev/null
   SERVER_PID=""
   sleep 1

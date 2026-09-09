@@ -365,6 +365,8 @@ for c in "${CHANNELS[@]}"; do CHANNEL_OK["${c}"]=0; CHANNEL_FAIL["${c}"]=0; done
 #
 # As métricas do servidor vão para <run>/server/, e não por repetição: o
 # processo é um só para toda a campanha.
+REPEAT_PEDIDO="${REPEAT}"
+
 if [[ "${ROLE}" == "server" ]]; then
   SRV_DIR="${OUT_DIR}/server"
   mkdir -p "${SRV_DIR}"
@@ -420,6 +422,7 @@ if [[ "${ROLE}" == "server" ]]; then
   log "Encerrando. Métricas do servidor em ${SRV_DIR}"
 
   REPEAT=0   # não há repetições do lado servidor; pula o laço abaixo
+             # (REPEAT_PEDIDO preserva o valor para o manifesto)
 fi
 
 for rep in $(seq 1 "${REPEAT}"); do
@@ -474,8 +477,41 @@ key_fingerprints() {
   [[ ${first} -eq 0 ]] && printf '\n'
 }
 
-NETEM_DESC="nenhum"
-[[ -n "${NETEM_PROFILE}" ]] && NETEM_DESC="${NETEM_PROFILE}"
+# O netem efetivamente ativo na interface, e não o que este script aplicou.
+#
+# Entre duas VMs o perfil precisa ser aplicado nos dois lados, e o caminho
+# natural é chamar ./netem.sh à mão em cada uma — nesse caso o run.sh não
+# aplicou nada e registraria "nenhum", fazendo o manifesto afirmar enlace limpo
+# numa campanha que teve 50 ms de atraso e perda induzida. Ler o qdisc responde
+# o que de fato valia, independentemente de quem o aplicou.
+netem_effective() {
+  local iface qdisc
+
+  iface="$(ip route show default 2>/dev/null | awk '/default/ {print $5; exit}')"
+  if [[ -z "${iface}" ]]; then
+    printf 'desconhecido'
+    return
+  fi
+
+  qdisc="$(tc qdisc show dev "${iface}" 2>/dev/null | grep -m1 netem)"
+  if [[ -z "${qdisc}" ]]; then
+    printf 'nenhum'
+    return
+  fi
+
+  # Descarta handle, refcnt e seed: mudam a cada aplicação do mesmo perfil e
+  # fariam duas execuções idênticas parecerem diferentes.
+  printf '%s' "${qdisc}" |
+    sed -E 's/^qdisc netem [0-9a-f]+: root refcnt [0-9]+ //; s/ seed [0-9]+//; s/limit [0-9]+ //'
+}
+
+netem_iface() {
+  ip route show default 2>/dev/null | awk '/default/ {print $5; exit}'
+}
+
+NETEM_DESC="$(netem_effective)"
+NETEM_REQUESTED="nenhum"
+[[ -n "${NETEM_PROFILE}" ]] && NETEM_REQUESTED="${NETEM_PROFILE}"
 
 {
   printf '{\n'
@@ -493,7 +529,11 @@ NETEM_DESC="nenhum"
   printf '    "libsrtp2": "%s",\n' "$(json_str "$(libsrtp_version)")"
   printf '    "wolfssl_prefix": "%s"\n' "$(json_str "${WOLFSSL_DIR:-/usr/local}")"
   printf '  },\n'
-  printf '  "netem": "%s",\n' "$(json_str "${NETEM_DESC}")"
+  printf '  "netem": {\n'
+  printf '    "efetivo": "%s",\n' "$(json_str "${NETEM_DESC}")"
+  printf '    "solicitado": "%s",\n' "$(json_str "${NETEM_REQUESTED}")"
+  printf '    "interface": "%s"\n' "$(json_str "$(netem_iface)")"
+  printf '  },\n'
   printf '  "parametros": {\n'
   printf '    "papel": "%s",\n' "$(json_str "${ROLE}")"
   printf '    "host": "%s",\n' "$(json_str "${HOST}")"

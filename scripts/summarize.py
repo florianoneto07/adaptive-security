@@ -221,7 +221,7 @@ def main():
     print()
 
     hdr = (f"{'CANAL':<14}{'PERFIL':<22}{'REPS':>5}{'MSGS':>9}"
-           f"{'OVERH.B':>9}{'p50 ms':>9}{'p95 ms':>9}{'p99 ms':>9}"
+           f"{'OVERH.B':>9}{'p50 ms':>11}{'p95 ms':>11}{'p99 ms':>11}"
            f"{'ENTREGA':>9}{'CPU/msg':>10}{'CPU/retx':>10}")
     print(hdr)
     print("-" * len(hdr))
@@ -229,9 +229,11 @@ def main():
         print(f"{r['canal']:<14}{r['perfil'][:21]:<22}{r['reps']:>5}"
               f"{fmt(r['msgs']):>9}"
               f"{fmt(r['overhead_b'], prec=1):>9}"
-              f"{fmt(r['p50_ms'], div=1e6, prec=2):>9}"
-              f"{fmt(r['p95_ms'], div=1e6, prec=2):>9}"
-              f"{fmt(r['p99_ms'], div=1e6, prec=2):>9}"
+              # 11 colunas: o volumoso sob handover chegou a 1046490.90 ms,
+              # dez caracteres, e com 9 as três colunas saíam coladas.
+              f"{fmt(r['p50_ms'], div=1e6, prec=2):>11}"
+              f"{fmt(r['p95_ms'], div=1e6, prec=2):>11}"
+              f"{fmt(r['p99_ms'], div=1e6, prec=2):>11}"
               f"{fmt(r['entrega_pct'], unit='%', prec=1):>9}"
               f"{fmt(r['cpu_msg_us'], unit='us', div=1e3, prec=1):>10}"
               f"{fmt(r['cpu_retx_us'], unit='us', div=1e3, prec=1):>10}")

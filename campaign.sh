@@ -8,7 +8,7 @@
 # lembrar de aplicá-lo em cada máquina, na ordem certa, entre condições.
 #
 # Uso:
-#   ./campaign.sh --client-ssh lab-client --host 192.168.218.128
+#   ./campaign.sh --client-ssh lab-client --host 192.168.218.130
 #
 # Opções:
 #   --client-ssh ALVO     host SSH da VM cliente (alias do ~/.ssh/config)
@@ -76,7 +76,31 @@ fi
 log() { printf '%s\n' "$*" | tee -a "${CAMPAIGN_LOG:-/dev/null}"; }
 warn() { printf '%s\n' "$*" >&2; [[ -n "${CAMPAIGN_LOG:-}" ]] && printf '%s\n' "$*" >> "${CAMPAIGN_LOG}"; }
 
-run_remote() { ssh -o BatchMode=yes "${CLIENT_SSH}" "$@"; }
+run_remote() { ssh -o BatchMode=yes -o ConnectTimeout=20 "${CLIENT_SSH}" "$@"; }
+
+# Sondagem do cliente enquanto ele roda. O netem vale para a interface inteira,
+# então cada ssh atravessa o enlace degradado que está sendo medido: sob
+# handover (20% de perda em rajada) uma sessão longa não sobrevive. Uma
+# sondagem, ao contrário, pode falhar à vontade — a seguinte repete do mesmo
+# ponto. O intervalo é escolha de engenharia do testbed, não vem da literatura.
+POLL_INTERVAL=15
+poll_remote() {
+  timeout 90 ssh -o BatchMode=yes -o ConnectTimeout=15 \
+    -o ServerAliveInterval=10 -o ServerAliveCountMax=3 "${CLIENT_SSH}" "$@"
+}
+
+# Comando de uma sondagem: código de saída (se já houver), se o processo vive,
+# tamanho do log e o trecho do log ainda não mostrado — tudo num ssh só, para
+# que uma falha de rede não deixe os quatro dados inconsistentes entre si.
+# Os '$' ficam para o shell REMOTO expandir.
+poll_cmd() {
+  local ctl="$1" shown="$2"
+  printf 'cd %s; ' "${CLIENT_DIR}"
+  printf 'if [ -f %s.rc ]; then echo RC=$(cat %s.rc); else echo RC=-; fi; ' "${ctl}" "${ctl}"
+  printf 'if kill -0 $(cat %s.pid 2>/dev/null) 2>/dev/null; then echo ALIVE=1; else echo ALIVE=0; fi; ' "${ctl}"
+  printf 'n=$(wc -c < %s.log 2>/dev/null || echo 0); echo SIZE=$n; ' "${ctl}"
+  printf 'tail -c +%d %s.log 2>/dev/null | head -c $((n - %d))' "$((shown + 1))" "${ctl}" "${shown}"
+}
 
 # ---------------------------------------------------------------------------
 # Pré-condições
@@ -179,11 +203,13 @@ log " servidor    ${HOST}"
 log ""
 
 # Estimativa: ajuda a decidir se dá para acompanhar ou se é caso de deixar
-# rodando. Cada canal consome DURATION, exceto o volumoso, que é mais rápido.
+# rodando. É um PISO: o volumoso transfere um tamanho fixo, não um tempo fixo,
+# e sob perda alta demora muito mais (handover: ~17 min por repetição, contra
+# 2 s em enlace limpo).
 n_ch=4
 [[ "${CHANNELS}" != "all" ]] && n_ch=$(wc -w <<< "${CHANNELS}")
 est_min=$(( ${#COND_LIST[@]} * REPEAT * n_ch * DURATION / 60 ))
-log " estimativa  ~${est_min} min"
+log " estimativa  >=${est_min} min (o volumoso pode estender muito sob perda)"
 log ""
 
 # ---------------------------------------------------------------------------
@@ -210,11 +236,35 @@ clear_netem() {
 }
 
 SERVER_PID=""
+CLIENT_PIDFILE=""   # pid do cliente remoto em execução, para abortar junto
+CLEANED=0
+
+# SIGTERM, e não SIGINT: um script iniciado em background herda SIGINT
+# ignorado, e o kill -INT não tinha efeito nenhum — a campanha ficava presa
+# em wait() indefinidamente depois de o cliente já ter terminado. Custou 40
+# minutos de espera numa condição que já estava pronta.
+stop_server() {
+  [[ -n "${SERVER_PID}" ]] || return 0
+  kill -TERM "${SERVER_PID}" 2>/dev/null
+  wait "${SERVER_PID}" 2>/dev/null
+  SERVER_PID=""
+  sleep 1
+}
+
 cleanup() {
+  [[ "${CLEANED}" -eq 1 ]] && return 0
+  CLEANED=1
   [[ -n "${SERVER_PID}" ]] && kill -TERM "${SERVER_PID}" 2>/dev/null
+  # O cliente é líder de sessão (setsid): o sinal ao grupo alcança o run.sh e
+  # os binários de canal abaixo dele.
+  if [[ -n "${CLIENT_PIDFILE}" ]]; then
+    run_remote "cd ${CLIENT_DIR} && kill -TERM -- -\$(cat ${CLIENT_PIDFILE}) 2>/dev/null" 2>/dev/null || true
+  fi
   clear_netem
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+# Sem o exit, o Ctrl-C limpava e a campanha seguia para a condição seguinte.
+trap 'cleanup; exit 130' INT TERM
 
 # ---------------------------------------------------------------------------
 # Uma condição
@@ -266,16 +316,97 @@ run_condition() {
   fi
   log " servidores no ar"
 
-  # --- cliente, remoto ---
-  cli_args="--role client --host ${HOST} --duration ${DURATION} --repeat ${REPEAT} --out results/${CAMPAIGN_ID}-${cond}"
-  log " rodando o cliente (${REPEAT} repetições)..."
+  # --- cliente, remoto e desacoplado da sessão SSH ---
+  #
+  # A sessão SSH que comandava o cliente atravessava o mesmo enlace degradado
+  # que estava sendo medido, e sob handover caiu na terceira repetição levando
+  # o cliente junto: rc=255 do ssh, 4 de 10 repetições. O cliente agora roda
+  # em sessão própria na VM cliente (setsid), com a saída em arquivo, e o que
+  # atravessa o enlace são sondagens curtas e descartáveis.
+  local remote_out="results/${CAMPAIGN_ID}-${cond}"
+  local remote_ctl="${remote_out}.cliente"   # .pid, .rc e .log, ao lado do diretório
+  cli_args="--role client --host ${HOST} --duration ${DURATION} --repeat ${REPEAT} --out ${remote_out}"
 
-  # Em tee, não redirecionado: sem isso a campanha fica quarenta minutos por
-  # condição sem imprimir nada, e não há como saber se avançou ou travou.
-  local cli_rc=0
-  run_remote "cd ${CLIENT_DIR} && ./run.sh ${cli_args} ${CHANNELS}" 2>&1 \
-    | sed 's/^/   | /' | tee -a "${cond_dir}/cliente.log"
-  cli_rc="${PIPESTATUS[0]}"
+  # Idempotente: se o ssh devolver 255 depois de já ter lançado o cliente,
+  # repetir o comando não lança um segundo por cima do primeiro.
+  local launch_cmd
+  launch_cmd="cd ${CLIENT_DIR} && mkdir -p results && \
+    if ! { [ -f ${remote_ctl}.pid ] && kill -0 \$(cat ${remote_ctl}.pid) 2>/dev/null; }; then \
+      setsid bash -c 'echo \$\$ > ${remote_ctl}.pid; ./run.sh ${cli_args} ${CHANNELS}; echo \$? > ${remote_ctl}.rc' \
+        > ${remote_ctl}.log 2>&1 < /dev/null & \
+    fi"
+
+  local attempt launched=0
+  for attempt in 1 2 3; do
+    if run_remote "${launch_cmd}"; then launched=1; break; fi
+    warn " lançamento do cliente falhou (tentativa ${attempt}/3); repetindo em 10s"
+    sleep 10
+  done
+  if [[ "${launched}" -eq 0 ]]; then
+    warn " não foi possível lançar o cliente; pulando a condição."
+    stop_server
+    return 1
+  fi
+  CLIENT_PIDFILE="${remote_ctl}.pid"
+  log " cliente lançado (${REPEAT} repetições); sondando a cada ${POLL_INTERVAL}s..."
+
+  # Sondagem até o cliente registrar o código de saída. O trecho novo do log é
+  # mostrado na hora — sem isso a campanha fica quarenta minutos por condição
+  # sem imprimir nada — e acumulado em cliente.log por contagem de BYTES, não
+  # de linhas, para que uma linha cortada ao meio não seja pulada na seguinte.
+  local shown=0 out="" body="" cli_rc="" size=0 pad=0
+  local rc_line alive_line size_line dead_polls=0 warned_slow=0 t0 elapsed
+  local nominal=$(( REPEAT * n_ch * DURATION ))
+  t0=$(date +%s)
+  : > "${cond_dir}/cliente.log"
+  while :; do
+    sleep "${POLL_INTERVAL}"
+    if ! out="$(poll_remote "$(poll_cmd "${remote_ctl}" "${shown}")")"; then
+      warn " sondagem falhou (ssh); repetindo em ${POLL_INTERVAL}s"
+      continue
+    fi
+    rc_line="$(sed -n 1p <<< "${out}")"
+    alive_line="$(sed -n 2p <<< "${out}")"
+    size_line="$(sed -n 3p <<< "${out}")"
+    if [[ "${rc_line}" != RC=* || "${alive_line}" != ALIVE=* || "${size_line}" != SIZE=* ]]; then
+      warn " sondagem devolveu resposta inesperada; repetindo"
+      continue
+    fi
+    size="${size_line#SIZE=}"
+    if (( size > shown )); then
+      body="$(sed -n '4,$p' <<< "${out}")"
+      # $(...) come as quebras de linha finais; o tamanho remoto diz quantas eram.
+      printf '%s' "${body}" >> "${cond_dir}/cliente.log"
+      pad=$(( size - shown - $(printf '%s' "${body}" | wc -c) ))
+      (( pad > 0 )) && printf '%*s' "${pad}" '' | tr ' ' '\n' >> "${cond_dir}/cliente.log"
+      printf '%s\n' "${body}" | sed 's/^/   | /'
+      shown="${size}"
+    fi
+
+    if [[ "${rc_line}" != "RC=-" ]]; then
+      cli_rc="${rc_line#RC=}"
+      break
+    fi
+    # Sem rc e sem processo: morreu sem registrar (VM reiniciada, kill -9).
+    # Duas sondagens seguidas, para não confundir com a janela entre o fim do
+    # run.sh e a gravação do rc.
+    if [[ "${alive_line}" == "ALIVE=0" ]]; then
+      dead_polls=$(( dead_polls + 1 ))
+      if (( dead_polls >= 2 )); then
+        warn " o cliente sumiu sem registrar o código de saída"
+        cli_rc=255
+        break
+      fi
+    else
+      dead_polls=0
+    fi
+    elapsed=$(( $(date +%s) - t0 ))
+    if (( elapsed > 2 * nominal + 600 && warned_slow == 0 )); then
+      warn " cliente já passou do dobro do tempo nominal (${elapsed}s); seguindo, o volumoso demora sob perda"
+      warned_slow=1
+    fi
+  done
+  CLIENT_PIDFILE=""
 
   if [[ "${cli_rc}" -ne 0 ]]; then
     warn " cliente terminou com rc=${cli_rc}; veja ${cond_dir}/cliente.log"
@@ -283,22 +414,24 @@ run_condition() {
   fi
 
   # --- derruba os servidores para que gravem os resumos ---
-  #
-  # SIGTERM, e não SIGINT: um script iniciado em background herda SIGINT
-  # ignorado, e o kill -INT não tinha efeito nenhum — a campanha ficava presa
-  # em wait() indefinidamente depois de o cliente já ter terminado. Custou 40
-  # minutos de espera numa condição que já estava pronta.
-  kill -TERM "${SERVER_PID}" 2>/dev/null
-  wait "${SERVER_PID}" 2>/dev/null
-  SERVER_PID=""
-  sleep 1
+  stop_server
 
   # --- traz os resultados do cliente ---
+  #
+  # A medição desta condição já acabou; sem o netem a cópia não sofre a perda
+  # que acabou de ser medida. A condição seguinte aplica o seu de novo.
+  clear_netem
   log " coletando resultados do cliente..."
-  if ! scp -q -r "${CLIENT_SSH}:${CLIENT_DIR}/results/${CAMPAIGN_ID}-${cond}" \
-       "${cli_out}/" 2>/dev/null; then
-    warn " não foi possível copiar os resultados do cliente."
-  fi
+  local copied=0
+  for attempt in 1 2 3; do
+    if scp -q -r "${CLIENT_SSH}:${CLIENT_DIR}/${remote_out}" "${cli_out}/" 2>/dev/null; then
+      copied=1; break
+    fi
+    sleep 5
+  done
+  [[ "${copied}" -eq 1 ]] || warn " não foi possível copiar os resultados do cliente."
+  # O log íntegro, direto da VM cliente, substitui o reconstruído pelas sondagens.
+  scp -q "${CLIENT_SSH}:${CLIENT_DIR}/${remote_ctl}.log" "${cond_dir}/cliente.log" 2>/dev/null || true
 
   # --- agrega esta condição ---
   local srv_run cli_run

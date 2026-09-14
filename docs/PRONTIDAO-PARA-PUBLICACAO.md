@@ -1,4 +1,4 @@
-# Rumo ao paper: o que já temos, o que falta
+# Relatório de prontidão dos resultados para publicação
 
 Data deste levantamento: 2026-09-12. Dados de `results/campaign-20260909T211230Z-b929392`
 (linha de base) e `results/campaign-20260910T212140Z-ccc8e7c` (3gpp-c2 e handover).

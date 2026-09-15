@@ -1,13 +1,16 @@
 # Relatório de prontidão dos resultados para publicação
 
-Data deste levantamento: 2026-09-12. Dados de `results/campaign-20260909T211230Z-b929392`
-(linha de base) e `results/campaign-20260910T212140Z-ccc8e7c` (3gpp-c2 e handover).
+Primeira versão: 2026-09-12. **Atualizado em 2026-09-15** com a campanha
+completa `results/campaign-20260915T121452Z-ad89a84` (as três condições num
+commit só, já com a correção do C2), que passa a ser a fonte autoritativa. As
+campanhas antigas (`b929392`, `ccc8e7c`) ficam só como histórico.
 
-A pergunta que este documento responde: **os dados colhidos até aqui, mais a
-campanha que vai rodar em seguida, bastam para um artigo?** A resposta curta
-é: bastam para um artigo *mínimo* de avaliação experimental, desde que três
-defeitos sejam sanados antes da campanha; não bastam para um artigo *forte*,
-que exige mais duas séries de medições descritas na §6.
+A pergunta que este documento responde: **os dados colhidos bastam para um
+artigo?** A resposta curta é: bastam para um artigo *mínimo* de avaliação
+experimental — a campanha completa está feita e os três itens de baixo esforço
+sobre ela (dispersão, bytes de fio do C2, disclaimer da CPU) foram resolvidos;
+não bastam para um artigo *forte*, que exige as duas séries de medições da §6
+(controle sem segurança e varredura de perda/atraso).
 
 ---
 
@@ -60,60 +63,74 @@ repetição:
 
 ### 2.3 Os números (mediana das repetições; tempos em ms, bytes em B)
 
-| Cond. | Canal | Reps | Estab. | Estab. B | Msgs | Sobrec. B/msg | p50 | p95 | p99 | Entrega | CPU/msg µs | CPU/verif µs | RSS kB |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| clean | C1 DTLS 1.3 | 10 | 14,1 | 4588 | 38400 | 22,0 | 1,32 | 1,56 | 2,25 | 100 % | 308 | 105 | 4264 |
-| clean | C2 OSCORE | 10 | 2,0 | pcap | 300 | pcap: 23,4 | 1,89 | 2,70 | 2,89 | 100 % | 1029 | — | 4200 |
-| clean | C3 DTLS-SRTP | 10 | 11,9 | 4611 | 250000 | 28,0 | (†) | +0,24 | +0,35 | 100 % | 294 | 30 | 6980 |
-| clean | C4 TLS 1.3 | 10 | 6,5 | 2941 | 20490 | 22,0 | 2335 (‡) | — | — | 100 % | 554 | 1035 | 4194 |
-| 3gpp-c2 | C1 DTLS 1.3 | 10 | 313,1 | 4588 | 38400 | 22,0 | 101,6 | 101,9 | 102,2 | 99,4 % | 54 | 94 | 4276 |
-| 3gpp-c2 | C2 OSCORE | 10 | 102,4 | pcap | 300 | pcap: 23,5 | 102,2 | 103,2 | 103,5 | 100 % | 692 | — | 4186 |
-| 3gpp-c2 | C3 DTLS-SRTP | 10 | 313,5 | 4611 | 250000 | 28,0 | (†) | +0,38 | +0,82 | 97,6 % | 84 | 30 | 7028 |
-| 3gpp-c2 | C4 TLS 1.3 | 10 | 205,6 | 2941 | 20490 | 22,0 | 2219 (‡) | — | — | 100 % | 953 | 520 | 4170 |
-| handover | C1 DTLS 1.3 | 4 | 3460,6 | 6835 | 11520 | 22,1 | 401,7 | 429,5 | 437,1 | 89,6 % | 65 | 112 | 4240 |
-| handover | C2 OSCORE | 4 | 391,1 | pcap | 107 | pcap: 23,7 | 405,7 | 3131,8 | 5852,1 | 56,1 % (§) | 537 | — | 4240 |
-| handover | C3 DTLS-SRTP | 4 | 3528,5 | 7576 | 75000 | 28,0 | (†) | +18,0 | +20,3 | 89,6 % | 61 | 26 | 7126 |
-| handover | C4 TLS 1.3 | 4 | 1304,0 | 2941 | 4288 | 22,1 | 1046491 (‡) | — | — | 99,6 % | 280 | 810 | 4286 |
+Campanha `campaign-20260915T121452Z-ad89a84`, 10 repetições por célula. Entre
+parênteses, o IQR entre repetições (dispersão), quando relevante.
 
-(†) C3 é unidirecional sem relógio comum: só as diferenças p95−p50 e p99−p50
-valem, e são as que estão na tabela.
-(‡) C4: tempo da transferência completa de 32 MiB, uma amostra por repetição
-(1145, 1062 e 0,34 Mbps, respectivamente).
-(§) Artefato de implementação, não do OSCORE — corrigido em 9703c07 (§3.2);
-a próxima campanha traz o número real.
-Sobrecarga do C2 por pcap: 51,4 B médios por pacote IP+UDP+CoAP+OSCORE para
-2 B de leitura, menos 28 B de IP+UDP = 23,4 B de CoAP+OSCORE. Comparável aos
-22 B de DTLS/TLS por registro **só depois** de descontar o cabeçalho CoAP, que
-existiria mesmo sem segurança (a decomposição exata está por fazer, §6, P0).
+| Cond. | Canal | Estab. ms | Estab. B | Msgs | Sobr. B/msg | p50 ms | p95 ms | p99 ms | Entrega | CPU/msg µs (♦) | CPU/verif µs | Mbps | RSS kB |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| clean | C1 DTLS 1.3 | 8,8 (3,1) | 4588 | 38400 | 22,0 | 0,78 | 0,93 | 1,31 | 100 % | 163 | 65 | — | 4340 |
+| clean | C2 OSCORE | 1,1 | 57/46 (‡) | 300 | 18 (‡) | 1,12 | 1,42 | 1,57 | 100 % | 576 | — | — | 4264 |
+| clean | C3 DTLS-SRTP | 6,9 | 4611 | 250000 | 28,0 | (†)0,00 | 0,00 | 0,00 | 100 % | 144 | 21 | — | 7062 |
+| clean | C4 TLS 1.3 | 3,3 | 2941 | 20490 | 22,0 | 578,8 (‡‡) | — | — | 100 % | 173 | 276 | **460,6** | 4200 |
+| 3gpp-c2 | C1 DTLS 1.3 | 308,6 | 4588 | 38400 | 22,0 | 101,2 | 101,3 | 101,5 | 99,9 % | 31 | 60 | — | 4340 |
+| 3gpp-c2 | C2 OSCORE | 101,6 | 57/46 (‡) | 300 | 18 (‡) | 101,6 | 101,8 | 102,0 | 100 % | 378 | — | — | 4246 |
+| 3gpp-c2 | C3 DTLS-SRTP | 308,7 | 4611 | 250000 | 28,0 | (†)0,00 | 0,00 | 0,00 | 99,9 % | 44 | 21 | — | 7072 |
+| 3gpp-c2 | C4 TLS 1.3 | 203,7 | 2941 | 20490 | 22,0 | 2148,0 (‡‡) | — | — | 100 % | 142 | 238 | **109,5** | 4262 |
+| handover | C1 DTLS 1.3 | 3754 (1563) | 7474 | 38400 | 22,0 | 401,2 | 428,9 | 436,2 | **89,7 %** | 33 | 63 | — | 4304 |
+| handover | C2 OSCORE | 413,9 | 57/46 (‡) | 251 | 18 (‡) | 405,0 | 3232 | 6827 | **100 %** | 390 | — | — | 4240 |
+| handover | C3 DTLS-SRTP | 4210 (1833) | 6652 | 250000 | 28,0 | (†)62,7 | 80,7 | 83,1 | **89,8 %** | 41 | 19 | — | 7076 |
+| handover | C4 TLS 1.3 | 823 | 2941 | 20490 | 22,0 | 2123008 (‡‡) | — | — | **100 %** | 140 | 438 | **0,13** | 4214 |
+
+(♦) **CPU/msg tem ressalva** — ver §3.3: mede o caminho de envio numa VM, não
+o custo isolado da cifra; a diferença entre condições é ambiental. Fica no
+paper com disclaimer, não como custo do protocolo. IQR de cada célula sai no
+`resumo.csv` (colunas `*_iqr`); no console, no bloco "Dispersão".
+(†) C3 é unidirecional sem relógio comum: valem as DIFERENÇAS p95−p50 e
+p99−p50; em clean/3gpp o atraso ficou sub-ms (0,00), sob handover o spread
+p99−p50 ≈ 20 ms é o número útil.
+(‡) C2 pelo pcap (`pcap_bytes.py --split-port 5002`): requisição 57 B,
+resposta 46 B (IP+). A resposta carrega os 2 B de leitura em 18 B de
+CoAP+OSCORE — **abaixo** dos 22 B por registro do DTLS/TLS. Constante nas três
+condições.
+(‡‡) C4: tempo da transferência COMPLETA de 32 MiB, uma amostra por repetição
+(não é latência por mensagem). Vazão mediana por repetição na coluna Mbps.
 
 ### 2.4 O que os números já contam
 
-Mesmo incompletos, os dados apoiam quatro observações que seriam parágrafos do
-artigo:
+Os dados apoiam cinco observações que seriam parágrafos do artigo:
 
 1. **O estabelecimento escala em RTTs, como a especificação prevê.** A 100 ms
    de RTT: OSCORE 1 RTT (102 ms, o desafio Echo), TLS 1.3 sobre TCP 2 RTT
-   (206 ms: SYN + handshake de 1-RTT), DTLS 1.3 com cookie 3 RTT (313 ms).
-   Sob handover, o DTLS 1.3 sobe para 3,5 s, e os bytes de estabelecimento vão
-   de 4588 para 6835–7576 B: são as retransmissões de handshake.
+   (204 ms: SYN + handshake de 1-RTT), DTLS 1.3 com cookie 3 RTT (309 ms).
+   Sob handover, o DTLS 1.3 sobe para 3,8 s (IQR 1,6 s — cauda das
+   retransmissões de handshake), e os bytes de estabelecimento vão de 4588
+   para 7474 B (C1) e de 4611 para 6652 B (C3): são as retransmissões.
 2. **A sobrecarga por mensagem é constante e independe do enlace**: 22 B
    (DTLS/TLS: cabeçalho de registro + tipo interno + tag de 16 B) e 28 B
-   (RTP 12 B + tag 16 B), estáveis nas três condições.
-3. **A entrega separa os perfis sob perda.** Com 20 % de perda em rajada, DTLS
-   e SRTP entregam ~90 % (não retransmitem: perda é perda), TCP entrega 99,6 %
-   ao custo de 1046 s para 32 MiB, e o C2 deve entregar >99 % pelas
-   retransmissões do CoAP (o número real virá da próxima campanha, já com a
-   correção da §3.2; a entrega de 56 % da campanha anterior era artefato).
-4. **Memória residente é indiferente ao perfil** na escala de um processo
+   (RTP 12 B + tag 16 B), estáveis nas três condições. O C2/OSCORE, pelo pcap,
+   entrega 2 B de leitura em 18 B de CoAP+OSCORE na resposta — **abaixo** dos
+   22 B do DTLS por registro (mas com o custo de uma requisição de 57 B, que
+   os canais unidirecionais não têm).
+3. **A entrega separa os perfis sob perda** — o resultado mais forte. Com 20 %
+   de perda em rajada: DTLS (C1) 89,7 % e SRTP (C3) 89,8 % (não retransmitem
+   dados de aplicação — perda é perda); CoAP/OSCORE (C2) **100 %** pelas
+   retransmissões confirmáveis; TCP (C4) **100 %**. A correção do C2 se
+   confirma na prática: 100 % em todas as 10 reps do handover (o 56 % anterior
+   era artefato). O trade-off do C2 aparece na cauda: p50 405 ms mas p99
+   6,8 s, pelo backoff do CoAP.
+4. **A vazão do C4 despenca com a condição**: 460,6 → 109,5 → 0,13 Mbps
+   (clean → 3gpp-c2 → handover). TCP sobre 20 % de perda em rajada colapsa —
+   35 min para 32 MiB por repetição.
+5. **Memória residente é indiferente ao perfil** na escala de um processo
    Linux (4,2–7,1 MB, dominada por libc e wolfSSL). Isso é resultado, não
    lacuna, mas não se compara com a literatura de microcontroladores (§5).
 
 ---
 
-## 3. Defeitos a sanar ANTES da próxima campanha
+## 3. Defeitos — todos resolvidos ou contornados
 
-Em ordem de gravidade. Os dois primeiros invalidam parte dos dados; o terceiro
-compromete uma coluna inteira.
+Em ordem de gravidade. Todos foram tratados; esta seção fica como registro do
+que era e de como foi resolvido.
 
 ### 3.1 `handover` incompleto — resolvido no `campaign.sh`
 
@@ -146,58 +163,63 @@ servidor voltou, a entrega retornou a 100 % até o fim (58 respostas no total).
 Com o código antigo, ficariam ~5 respostas. A perda do C2 agora reflete só a
 indisponibilidade real do enlace.
 
-### 3.3 CPU por mensagem inconsistente entre condições
+### 3.3 CPU por mensagem incoerente entre condições — mantida com disclaimer
 
-O mesmo `wolfSSL_write` de 128 B custa 308 µs em `clean` e 54 µs em
-`3gpp-c2`; o C4 vai de 554 para 953 e 280 µs; o C2 de 1029 para 692 e 537 µs.
-Cifrar 128 B com AES-GCM custa décimos de microssegundo: o que a janela mede é
-sobretudo a chamada de sistema e a contabilidade de CPU numa VM, com ruído de
-escalonamento que varia com o que mais estava rodando. Nesse estado a coluna
-não sustenta afirmação nenhuma.
+A CPU/msg difere de forma **sistemática** entre condições, não aleatória:
+clean ~163 µs, 3gpp-c2 ~31 µs, handover ~33 µs para o mesmo `wolfSSL_write` de
+128 B do C1 (medições apertadas dentro de cada condição: IQR de 0,4–15 µs).
+Cifrar 128 B com AES-GCM custa décimos de microssegundo; o que a janela mede é
+o caminho de envio inteiro numa VM (chamada de sistema + contabilidade do
+escalonador), e o fator ambiental que separa clean das condições com netem não
+é o custo do protocolo.
 
-Opções, da mais barata à mais rigorosa:
-- reportar mediana e IQR por repetição (os CSVs já têm o dado por mensagem) e
-  fixar a afinidade de CPU do processo (`taskset`), com a VM ociosa;
-- medir ciclos com `perf stat -e cycles` por processo, como Gallenmüller et
-  al. (§5), em vez de tempo de CPU;
-- separar o custo criptográfico com o `benchmark` do wolfSSL (mesma cifra,
-  mesma máquina) e apresentar as duas coisas: custo do algoritmo e custo do
-  caminho completo.
+**Decisão (2026-09-15): a coluna fica no resumo, com disclaimer.** O
+`summarize.py` imprime uma nota fixa e o relatório/paper carregam o mesmo aviso:
+os valores servem de ordem de grandeza do custo por mensagem no caminho
+completo, **não** para comparar protocolos entre condições. As três opções mais
+rigorosas (afinidade com `taskset`; ciclos via `perf stat`, como Gallenmüller
+et al.; ou isolar a cifra com o `benchmark` do wolfSSL) ficam para uma medição
+dedicada de CPU, fora do caminho crítico da campanha.
 
-### 3.4 Menores, mas que um revisor apontaria
+### 3.4 Itens menores — resolvidos ou registrados
 
-- **Dispersão não é reportada.** O `resumo.csv` traz a mediana das
-  repetições; falta IQR ou intervalo de confiança. Os dados por repetição
-  existem (p.ex. estabelecimento C1 em clean: 12,9–16,0 ms; em 3gpp-c2:
-  312,3–362,4 ms). É só somar ao `summarize.py`.
-- **Relógios não sincronizados** limitam o C3 a jitter. Ou se aceita como
-  limitação declarada, ou se sincroniza as VMs com `chrony` apontando uma
-  para a outra antes da campanha (custo: minutos).
-- **Bytes de estabelecimento do C2** só saem do pcap e ainda não foram
-  extraídos (a primeira transação, com o Echo, tem tamanho diferente das
-  seguintes).
-- **Tamanho da amostra de RTT do C2**: 300 leituras em 10 repetições — p99
-  de 300 amostras é a 3.ª pior. Ou se alonga a duração para o C2, ou se
-  reporta só p50/p95 para ele.
+- **Dispersão** (IQR): resolvido (55a3716). O `summarize.py` reporta o IQR
+  entre repetições para estabelecimento, p50, CPU/msg e vazão, no console e em
+  colunas `*_iqr` do CSV.
+- **Bytes de fio do C2**: resolvido (63210d7). `pcap_bytes.py --split-port`
+  separa requisição (57 B) de resposta (46 B); a resposta leva 2 B em 18 B de
+  CoAP+OSCORE.
+- **Vazão do C4 inflada 10×**: era bug do `summarize.py` (numerador somava as
+  10 reps, denominador era a mediana de uma). Resolvido (422df0f); os valores
+  corretos são 460,6 / 109,5 / 0,13 Mbps.
+- **Relógios não sincronizados** limitam o C3 a jitter. Aceito como limitação
+  declarada; sob handover o spread p99−p50 ≈ 20 ms é o número útil. Se quiser
+  o absoluto, `chrony` entre as VMs antes da campanha (custo: minutos).
+- **Tamanho da amostra de RTT do C2**: ~25–30 leituras por repetição (a
+  cadência de 2 s em 60 s), 250–300 no total da condição — p99 por repetição é
+  grosseiro. Reportar p50/p95 para o C2, ou alongar a duração só desse canal.
+- **C4 sob perda alta é lento**: 32 MiB levou ~35 min/rep no handover. Não é
+  defeito, é o resultado do TCP sob 20 % de perda — mas inviabiliza varreduras
+  (§6, P1). Decisão pendente: reduzir o `--bulk-size` nas condições
+  degradadas e declarar no texto.
 
 ---
 
-## 4. O que a próxima campanha entrega
+## 4. O que a campanha entregou (feito)
 
-Rodando `./campaign.sh --client-ssh lab-client --host 192.168.218.130 --capture`
-(as três condições, 60 s × 10) num commit só, com a correção da §3.2:
+`campaign-20260915T121452Z-ad89a84`, rodada em 2026-09-15 com
+`./campaign.sh --client-ssh lab-client --host 192.168.218.130 --capture`, num
+commit só (`ad89a84`) já com a correção do C2:
 
-- as três condições completas e comparáveis;
+- as três condições completas e comparáveis, **3 × 4 × 10 = 120 execuções**;
 - pcap dos quatro canais nas três condições (sobrecarga real no fio, incluindo
-  o C2 e o estabelecimento);
-- tempo estimado: ~80 min para clean e 3gpp-c2, mais **~3,5 h para handover**
-  — o C4 leva ~17 min por repetição a 0,34 Mbps. Deixe rodando; o script não
-  precisa mais de operador.
+  o C2, extraída com `pcap_bytes.py --split-port`);
+- 7 métricas por célula, com dispersão (IQR) entre repetições.
 
-Com isso, e com as correções da §3, o conjunto é: 3 condições × 4 canais ×
-10 repetições, 7 métricas. **É o mínimo publicável** para um artigo de
-avaliação experimental em workshop ou conferência de comunicações, com o
-argumento centrado nas quatro observações da §2.4.
+O handover levou ~6 h por causa do C4 (35 min/rep a 0,13 Mbps). **É o conjunto
+mínimo publicável** para um artigo de avaliação experimental em workshop ou
+conferência de comunicações, com o argumento centrado nas cinco observações da
+§2.4. Os itens de tratamento (§3) estão todos fechados.
 
 ---
 
@@ -235,14 +257,17 @@ O que se repete em quase todos e o testbed **não** tem:
 
 ## 6. Testes propostos, por prioridade
 
-**P0 — necessário para o artigo mínimo** (tudo cabe numa campanha noturna)
+**P0 — necessário para o artigo mínimo: TUDO FEITO**
 
-| # | Teste | Motivo | Custo |
-|---|---|---|---|
-| P0.1 | ~~Corrigir §3.2~~ (feito, 9703c07) e rodar as três condições num commit só | dados comparáveis e completos | ~5 h de campanha |
-| P0.2 | Dispersão (IQR ou IC 95 %) no `summarize.py` | todo trabalho da tabela reporta | 1 h de script |
-| P0.3 | Sobrecarga e estabelecimento **pelo pcap** nos quatro canais | valida os contadores internos e cobre o C2; decompõe os 23,4 B do C2 em CoAP vs OSCORE | script sobre pcaps já colhidos |
-| P0.4 | Tratar §3.3 (CPU) por uma das três opções | a coluna não sustenta afirmação hoje | 2–4 h |
+| # | Teste | Estado |
+|---|---|---|
+| P0.1 | Corrigir o C2 e rodar as três condições num commit só | **feito** (9703c07; campanha ad89a84) |
+| P0.2 | Dispersão (IQR) no `summarize.py` | **feito** (55a3716) |
+| P0.3 | Bytes de fio do C2 pelo pcap | **feito** (63210d7: `--split-port`) |
+| P0.4 | Tratar a CPU (§3.3) | **feito**: mantida com disclaimer (55a3716) |
+
+Com o P0 fechado, **o material do artigo mínimo está pronto para escrever**. O
+que segue (P1/P2) é o que eleva de "mínimo" a "forte".
 
 **P1 — o que separa "mínimo" de "forte"**
 
@@ -293,15 +318,17 @@ energia, Flash/RAM em microcontrolador, hardware de UAV, AKMA.
 
 Nada abaixo foi assumido; o documento só enumera.
 
-1. ~~Corrigir o C2 (§3.2) antes da campanha~~ — feito (9703c07) e validado.
-2. Qual tratamento para a CPU (§3.3): mediana+afinidade, `perf`, ou
-   microbenchmark do wolfSSL?
-3. Sincronizar os relógios das VMs para o C3, ou manter só jitter?
-4. Fazer P1.1/P1.2 (varreduras) nesta rodada? Se sim, o C4 sob perda alta
-   precisa de decisão: manter 32 MiB (horas) ou reduzir só para as varreduras
-   (e dizer isso no texto).
+1. ~~Corrigir o C2 antes da campanha~~ — feito (9703c07) e validado.
+2. ~~Tratamento da CPU~~ — decidido: fica no resumo com disclaimer (§3.3). Uma
+   medição de CPU dedicada (perf/taskset) só se for virar contribuição própria.
+3. Sincronizar os relógios das VMs para o C3, ou manter só jitter? (Recomendo
+   manter jitter e declarar a limitação — o spread sob handover já é útil.)
+4. **C4/bulk sob perda alta**: 32 MiB deu ~35 min/rep no handover. Para as
+   varreduras (P1) isso é proibitivo. Reduzir o `--bulk-size` (p.ex. 4–8 MiB)
+   nas condições degradadas e declarar no texto, ou manter 32 MiB e aceitar as
+   horas? Precisa da sua decisão antes de qualquer varredura.
 5. P1.3 (controle sem segurança) entra? É a adição de maior retorno por
-   esforço.
+   esforço para separar "custo do perfil" de "custo de rodar o tráfego".
 6. P2.1 (alternativas por classe) é para este artigo ou para o seguinte?
-7. Alvo de publicação: workshop/conferência (mínimo + P1) ou periódico
-   (P1 + P2)? Isso define quanto da §6 é obrigatório.
+7. Alvo de publicação: workshop/conferência (mínimo, já pronto) ou periódico
+   (exige P1 + P2)? Isso define quanto da §6 é obrigatório.

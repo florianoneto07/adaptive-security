@@ -86,6 +86,25 @@ def total(rows, key):
     return sum(vals) if vals else None
 
 
+def med_iqr(values):
+    """
+    (mediana, IQR) de uma lista de números, ignorando None. IQR = p75 - p25,
+    a medida de dispersão entre repetições que o paper precisa reportar junto
+    da mediana. Devolve (None, None) se vazia; IQR 0.0 com menos de duas
+    amostras, pois não há dispersão a estimar.
+    """
+    vals = sorted(v for v in values if v is not None)
+    if not vals:
+        return None, None
+    md = statistics.median(vals)
+    if len(vals) >= 2:
+        q = statistics.quantiles(vals, n=4, method="inclusive")
+        iqr = q[2] - q[0]
+    else:
+        iqr = 0.0
+    return md, iqr
+
+
 def fmt(v, unit="", div=1.0, prec=1):
     if v is None:
         return "—"
@@ -108,7 +127,12 @@ def analyse(slug, label, transport, data):
     row["perfil"] = ref.get("profile", "?")
 
     # --- estabelecimento ---
-    row["handshake_ms"] = med(cli, "handshake_wall_ns")
+    # Além da mediana, a dispersão entre repetições (IQR): o paper reporta as
+    # duas. Guardadas em nanossegundos como as medianas; a impressão converte.
+    hs_med, hs_iqr = med_iqr([r.get("handshake_wall_ns") for r in cli
+                              if isinstance(r.get("handshake_wall_ns"), int)])
+    row["handshake_ms"] = hs_med
+    row["handshake_ms_iqr"] = hs_iqr
     row["handshake_cpu_ms"] = med(cli, "handshake_cpu_ns")
     hs_tx = med(cli, "handshake_wire_tx_bytes")
     hs_rx = med(cli, "handshake_wire_rx_bytes")
@@ -135,7 +159,10 @@ def analyse(slug, label, transport, data):
     # registra o atraso é o receptor, e olhar só o cliente daria zero.
     lat = cli if any(r.get("rtt_samples") for r in cli) else srv
     row["lat_origem"] = "cliente (RTT)" if lat is cli else "servidor (unidirecional)"
-    row["p50_ms"] = med(lat, "rtt_p50_ns")
+    p50_med, p50_iqr = med_iqr([r.get("rtt_p50_ns") for r in lat
+                                if isinstance(r.get("rtt_p50_ns"), int)])
+    row["p50_ms"] = p50_med
+    row["p50_ms_iqr"] = p50_iqr
     row["p95_ms"] = med(lat, "rtt_p95_ns")
     row["p99_ms"] = med(lat, "rtt_p99_ns")
 
@@ -156,13 +183,25 @@ def analyse(slug, label, transport, data):
                    for r in cli
                    if isinstance(r.get("app_bytes_tx"), int)
                    and isinstance(r.get("duration_ns"), int) and r["duration_ns"]]
-        row["mbps"] = statistics.median(per_rep) if per_rep else None
+        mbps_med, mbps_iqr = med_iqr(per_rep)
+        row["mbps"] = mbps_med
+        row["mbps_iqr"] = mbps_iqr
     else:
         row["mbps"] = None
+        row["mbps_iqr"] = None
 
     # --- CPU por mensagem ---
-    cpu_send = total(cli, "cpu_first_send_ns")
-    row["cpu_msg_us"] = (cpu_send / sent) if (cpu_send and sent) else None
+    # Mediana da razão POR repetição (com IQR), para que a dispersão seja
+    # reportável. Ver o disclaimer da CPU impresso ao fim e no relatório: a
+    # coluna mede o caminho completo do send numa VM, não o custo isolado da
+    # cifra, e difere entre condições por fatores ambientais.
+    # ns por mensagem em cada repetição (o campo guarda ns; a impressão divide
+    # por 1e3 para mostrar µs).
+    cpu_per_rep = [r["cpu_first_send_ns"] / r["msgs_sent"]
+                   for r in cli
+                   if isinstance(r.get("cpu_first_send_ns"), int)
+                   and isinstance(r.get("msgs_sent"), int) and r["msgs_sent"]]
+    row["cpu_msg_us"], row["cpu_msg_us_iqr"] = med_iqr(cpu_per_rep)
 
     retx = total(cli, "msgs_retx")
     cpu_retx = total(cli, "cpu_retransmit_ns")
@@ -253,6 +292,19 @@ def main():
               f"{fmt(r['handshake_bytes']):>9}"
               f"{fmt(r['rss_kb']):>9}")
 
+    # Dispersão entre repetições (IQR = p75 - p25). A mediana sozinha não diz se
+    # o valor é estável; o paper reporta as duas. As colunas do CSV terminadas
+    # em _iqr trazem o mesmo, para as barras de erro dos gráficos.
+    print()
+    print("Dispersão entre repetições (IQR = p75 - p25):")
+    print(f"  {'CANAL':<14}{'HANDSHAKE ms':>14}{'p50 ms':>11}{'CPU/msg us':>12}{'Mbps':>10}")
+    for r in rows:
+        print(f"  {r['canal']:<14}"
+              f"{fmt(r.get('handshake_ms_iqr'), div=1e6, prec=2):>14}"
+              f"{fmt(r.get('p50_ms_iqr'), div=1e6, prec=2):>11}"
+              f"{fmt(r.get('cpu_msg_us_iqr'), div=1e3, prec=1):>12}"
+              f"{fmt(r.get('mbps_iqr'), prec=2):>10}")
+
     for r in rows:
         if r.get("mbps") is not None:
             print()
@@ -280,6 +332,12 @@ def main():
             r["entrega_pct"] = None
 
     notas = []
+    if any(r.get("cpu_msg_us") is not None for r in rows):
+        notas.append("CPU/msg é a mediana do custo de CPU do caminho de envio "
+                     "numa VM (chamada de sistema + contabilidade do escalonador), "
+                     "NÃO o custo isolado da cifra. Difere entre condições por "
+                     "fatores ambientais — não tome a diferença entre condições "
+                     "como custo do protocolo. Disclaimer a repetir no paper")
     if any(r["overhead_b"] is None for r in rows):
         notas.append("overhead vazio: canal sem contadores de fio (C2/libcoap); "
                      "use a captura em pcap")

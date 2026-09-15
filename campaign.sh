@@ -19,6 +19,9 @@
 #   --duration SEGUNDOS   por execução (padrão 60)
 #   --repeat N            repetições por condição (padrão 10)
 #   --channels LISTA      canais (padrão: all)
+#   --bulk-size MiB       tamanho da transferência do C4 (padrão do run.sh: 32).
+#                         Reduza nas varreduras de perda alta, onde 32 MiB leva
+#                         dezenas de minutos por repetição.
 #   --capture             grava pcap (necessário para bytes no fio do C2)
 #   --out DIR             raiz da campanha (padrão results)
 #   --dry-run             mostra o que faria, sem executar
@@ -43,11 +46,14 @@ CONDITIONS="clean,3gpp-c2,handover"
 DURATION=60
 REPEAT=10
 CHANNELS="all"
+BULK_MIB=""          # vazio: usa o padrão do run.sh (32 MiB)
 CAPTURE=0
 OUT_ROOT="results"
 DRY_RUN=0
 
-usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; }
+# Imprime o cabeçalho de comentário até a primeira linha de código, sem depender
+# de um número de linha fixo (que já ficou defasado ao editar o cabeçalho).
+usage() { awk 'NR>=2 && /^#/{sub(/^# ?/,""); print; next} NR>=2{exit}' "${BASH_SOURCE[0]}"; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -58,6 +64,7 @@ while [[ $# -gt 0 ]]; do
     --duration)   DURATION="${2:-}"; shift 2 ;;
     --repeat)     REPEAT="${2:-}"; shift 2 ;;
     --channels)   CHANNELS="${2:-}"; shift 2 ;;
+    --bulk-size)  BULK_MIB="${2:-}"; shift 2 ;;
     --out)        OUT_ROOT="${2:-}"; shift 2 ;;
     --capture)    CAPTURE=1; shift ;;
     --dry-run)    DRY_RUN=1; shift ;;
@@ -197,6 +204,7 @@ log " commit      ${LOCAL_COMMIT} (as duas VMs)"
 log " condições   ${COND_LIST[*]}"
 log " canais      ${CHANNELS}"
 log " duração     ${DURATION}s x ${REPEAT} repetições por condição"
+[[ -n "${BULK_MIB}" ]] && log " bulk C4     ${BULK_MIB} MiB (padrão 32)"
 log " cliente     ${CLIENT_SSH}:${CLIENT_DIR}"
 log " servidor    ${HOST}"
 [[ "${CAPTURE}" -eq 1 ]] && log " captura     pcap habilitado"
@@ -326,6 +334,7 @@ run_condition() {
   local remote_out="results/${CAMPAIGN_ID}-${cond}"
   local remote_ctl="${remote_out}.cliente"   # .pid, .rc e .log, ao lado do diretório
   cli_args="--role client --host ${HOST} --duration ${DURATION} --repeat ${REPEAT} --out ${remote_out}"
+  [[ -n "${BULK_MIB}" ]] && cli_args="${cli_args} --bulk-size ${BULK_MIB}"
 
   # Idempotente: se o ssh devolver 255 depois de já ter lançado o cliente,
   # repetir o comando não lança um segundo por cima do primeiro.

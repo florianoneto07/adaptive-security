@@ -269,13 +269,16 @@ O que se repete em quase todos e o testbed **não** tem:
 Com o P0 fechado, **o material do artigo mínimo está pronto para escrever**. O
 que segue (P1/P2) é o que eleva de "mínimo" a "forte".
 
-**P1 — o que separa "mínimo" de "forte"**
+**P1 — o que separa "mínimo" de "forte": ferramenta pronta (falta rodar)**
 
-| # | Teste | Motivo | Custo |
-|---|---|---|---|
-| P1.1 | Varredura de perda: {0; 0,1; 1; 5; 10; 20} % a 50 ms | curva de estabelecimento e entrega vs perda, como Vučinić; é o resultado que dá figura | 6 condições ≈ 5 h + o C4 sob perda alta (pode passar de 3 h a 20 %) |
-| P1.2 | Varredura de atraso: {0; 25; 50; 100; 200} ms a 0,1 % | confirma "estabelecimento = k × RTT" com k = 1, 2, 3 por perfil | 5 condições ≈ 4 h |
-| P1.3 | Controle sem segurança por classe (UDP puro, CoAP sem OSCORE, RTP sem SRTP, TCP puro) | isola o custo do perfil; padrão da literatura | 4 binários pequenos (só medição; não é fallback em runtime, R2 preservado) + 1 campanha |
+| # | Teste | Estado da ferramenta |
+|---|---|---|
+| P1.1 | Varredura de perda {0; 0,1; 1; 5; 10; 20} % a 50 ms | **pronta** (98512e9): perfis `loss-<X>` no netem.sh |
+| P1.2 | Varredura de atraso {0; 25; 50; 100; 200} ms a 0,1 % | **pronta** (98512e9): perfis `delay-<Y>` no netem.sh |
+| P1.3 | Controle sem segurança por classe (UDP, CoAP, RTP, TCP puros) | **pronta** (b041117, 1eeeee6): binários `*_plain` e canais `*-plain` |
+
+Decidido (2026-09-15): C4 a **8 MiB** nas varreduras (32 MiB era proibitivo) e
+**5 repetições** por ponto. Comandos exatos na §9.
 
 **P2 — sustenta a tese "por classe", não só "por perfil"**
 
@@ -332,3 +335,58 @@ Nada abaixo foi assumido; o documento só enumera.
 6. P2.1 (alternativas por classe) é para este artigo ou para o seguinte?
 7. Alvo de publicação: workshop/conferência (mínimo, já pronto) ou periódico
    (exige P1 + P2)? Isso define quanto da §6 é obrigatório.
+
+---
+
+## 9. Comandos do P1
+
+Pré-requisito, uma vez: as duas VMs no mesmo commit, recompiladas (o `make`
+agora também constrói os baselines).
+
+No servidor:
+
+```
+git push
+```
+
+No cliente:
+
+```
+cd ~/adaptive-security && git pull && make clean && make WOLFSSL_DIR="$HOME/.local"
+```
+
+As três campanhas do P1, no servidor (cada uma grava seu próprio
+`results/campaign-*/resumo.csv`). Rode desacopladas do terminal com `nohup ... &`.
+
+**P1.1 — varredura de perda** (6 pontos, 50 ms fixos):
+
+```
+./campaign.sh --client-ssh lab-client --host 192.168.218.130 --capture \
+  --conditions loss-0,loss-0.1,loss-1,loss-5,loss-10,loss-20 \
+  --repeat 5 --bulk-size 8
+```
+
+**P1.2 — varredura de atraso** (5 pontos, 0,1 % de perda fixos):
+
+```
+./campaign.sh --client-ssh lab-client --host 192.168.218.130 --capture \
+  --conditions delay-0,delay-25,delay-50,delay-100,delay-200 \
+  --repeat 5 --bulk-size 8
+```
+
+**P1.3 — controle sem segurança** (canais em claro, nas três condições base):
+
+```
+./campaign.sh --client-ssh lab-client --host 192.168.218.130 --capture \
+  --conditions clean,3gpp-c2,handover --repeat 5 --bulk-size 8 \
+  --channels "control-plain telemetry-plain media-plain bulk-plain"
+```
+
+Cada baseline pareia com o canal seguro correspondente da campanha principal
+(`ad84...`): a diferença é o custo do perfil. Para a figura de custo de
+segurança, comparar `resumo.csv` da campanha segura (mesma condição) com o da
+baseline. Se quiser as curvas de custo de segurança ao longo das varreduras,
+repetir P1.1/P1.2 com `--channels "...-plain"` — dobra o tempo das varreduras.
+
+Ordem sugerida pela duração: P1.2 (~1,5 h, perda baixa) → P1.3 (~2 h) → P1.1
+(~3 h, o C4 sob 10–20 % domina). Nenhuma precisa de operador presente.

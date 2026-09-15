@@ -76,13 +76,89 @@ def read_pcap(path):
     return link_name, link_hdr, n, total
 
 
+def split_by_port(path, port):
+    """
+    Separa os pacotes UDP por direção em relação a `port`, parseando IPv4+UDP.
+
+    Devolve (link_name, req, resp), onde req são os tamanhos IP+ dos pacotes
+    com porta de DESTINO igual a `port` (a requisição, cliente->servidor) e
+    resp os de porta de ORIGEM igual a `port` (a resposta). O tamanho é o
+    orig_len menos o cabeçalho de enlace — comparável com os contadores
+    internos —, mesmo que a captura tenha truncado o quadro, porque os
+    cabeçalhos IP e UDP cabem nos primeiros bytes.
+    """
+    data = path.read_bytes()
+    if len(data) < 24:
+        raise ValueError("arquivo curto demais para ser um pcap")
+    magic = struct.unpack("<I", data[:4])[0]
+    if magic not in PCAP_MAGICS:
+        raise ValueError("não é pcap clássico (veja pcap_bytes sem --split-port)")
+    endian, _ = PCAP_MAGICS[magic]
+    link_type = struct.unpack(endian + "I", data[20:24])[0]
+    link_name, link_hdr = LINK_HEADER.get(link_type, (f"link-type {link_type}", 0))
+
+    off = 24
+    rec = struct.Struct(endian + "IIII")
+    req, resp = [], []
+    while off + 16 <= len(data):
+        _, _, incl_len, orig_len = rec.unpack_from(data, off)
+        off += 16
+        frame = data[off:off + incl_len]
+        off += incl_len
+        if off > len(data):
+            break
+        ip = link_hdr
+        if len(frame) < ip + 28 or (frame[ip] >> 4) != 4 or frame[ip + 9] != 17:
+            continue                      # não é IPv4/UDP no formato esperado
+        ihl = (frame[ip] & 0x0F) * 4
+        udp = ip + ihl
+        if len(frame) < udp + 4:
+            continue
+        dport = struct.unpack(">H", frame[udp + 2:udp + 4])[0]
+        sport = struct.unpack(">H", frame[udp:udp + 2])[0]
+        size = orig_len - link_hdr
+        if dport == port:
+            req.append(size)
+        elif sport == port:
+            resp.append(size)
+    return link_name, req, resp
+
+
+def _stat(name, sizes):
+    if not sizes:
+        print(f"  {name:<26}sem pacotes")
+        return
+    import statistics
+    print(f"  {name:<26}n={len(sizes):>4}  média={statistics.mean(sizes):6.1f} B  "
+          f"[{min(sizes)}-{max(sizes)}]")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("pcap", type=Path, nargs="+")
     ap.add_argument("--keep-link-header", action="store_true",
                     help="não descontar o cabeçalho de enlace")
+    ap.add_argument("--split-port", type=int, metavar="PORTA",
+                    help="separa por direção UDP: requisições com destino nesta "
+                         "porta vs respostas com origem nela (para o C2/OSCORE, "
+                         "isolar a leitura na resposta)")
     args = ap.parse_args()
+
+    if args.split_port is not None:
+        for path in args.pcap:
+            if not path.is_file():
+                print(f"{path.name}: não encontrado", file=sys.stderr)
+                continue
+            try:
+                link, req, resp = split_by_port(path, args.split_port)
+            except ValueError as e:
+                print(f"{path.name}: {e}", file=sys.stderr)
+                continue
+            print(f"{path.name}  (enlace {link}, porta {args.split_port}, bytes IP+)")
+            _stat(f"requisição (->:{args.split_port})", req)
+            _stat(f"resposta   (:{args.split_port}->)", resp)
+        return
 
     print(f"{'ARQUIVO':<24}{'ENLACE':<14}{'PACOTES':>10}{'BYTES IP+':>13}{'MÉDIA/PKT':>11}")
     print("-" * 72)

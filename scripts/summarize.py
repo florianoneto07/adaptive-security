@@ -148,10 +148,15 @@ def analyse(slug, label, transport, data):
     else:
         row["entrega_pct"] = (100.0 * recv / sent) if (sent and recv is not None) else None
 
-    # Throughput só faz sentido no canal de transferência volumosa.
-    dur = med(cli, "duration_ns")
-    if transport == "fluxo" and app and dur:
-        row["mbps"] = app * 8.0 / (dur / 1e9) / 1e6
+    # Throughput só faz sentido no canal de transferência volumosa. É a mediana
+    # da vazão POR repetição — não os bytes somados de todas as repetições sobre
+    # a duração de uma só, que inflava o valor pelo número de repetições.
+    if transport == "fluxo":
+        per_rep = [r["app_bytes_tx"] * 8.0 / (r["duration_ns"] / 1e9) / 1e6
+                   for r in cli
+                   if isinstance(r.get("app_bytes_tx"), int)
+                   and isinstance(r.get("duration_ns"), int) and r["duration_ns"]]
+        row["mbps"] = statistics.median(per_rep) if per_rep else None
     else:
         row["mbps"] = None
 

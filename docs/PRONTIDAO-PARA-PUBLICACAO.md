@@ -79,7 +79,8 @@ repetição:
 valem, e são as que estão na tabela.
 (‡) C4: tempo da transferência completa de 32 MiB, uma amostra por repetição
 (1145, 1062 e 0,34 Mbps, respectivamente).
-(§) Artefato de implementação, não do OSCORE — ver §3.2.
+(§) Artefato de implementação, não do OSCORE — corrigido em 9703c07 (§3.2);
+a próxima campanha traz o número real.
 Sobrecarga do C2 por pcap: 51,4 B médios por pacote IP+UDP+CoAP+OSCORE para
 2 B de leitura, menos 28 B de IP+UDP = 23,4 B de CoAP+OSCORE. Comparável aos
 22 B de DTLS/TLS por registro **só depois** de descontar o cabeçalho CoAP, que
@@ -100,8 +101,9 @@ artigo:
    (RTP 12 B + tag 16 B), estáveis nas três condições.
 3. **A entrega separa os perfis sob perda.** Com 20 % de perda em rajada, DTLS
    e SRTP entregam ~90 % (não retransmitem: perda é perda), TCP entrega 99,6 %
-   ao custo de 1046 s para 32 MiB, e o C2 teria de entregar >99 % pelas
-   retransmissões do CoAP — mas não entregou pelo defeito da §3.2.
+   ao custo de 1046 s para 32 MiB, e o C2 deve entregar >99 % pelas
+   retransmissões do CoAP (o número real virá da próxima campanha, já com a
+   correção da §3.2; a entrega de 56 % da campanha anterior era artefato).
 4. **Memória residente é indiferente ao perfil** na escala de um processo
    Linux (4,2–7,1 MB, dominada por libc e wolfSSL). Isso é resultado, não
    lacuna, mas não se compara com a literatura de microcontroladores (§5).
@@ -119,26 +121,30 @@ A sessão SSH que dirigia o cliente atravessava o enlace com 20 % de perda e
 caiu na terceira repetição. Corrigido em 4d36592: o cliente roda em sessão
 própria na VM cliente e o orquestrador só sonda. Basta rodar de novo.
 
-### 3.2 C2 não se recupera depois de um NACK — **bug do cliente, não corrigido**
+### 3.2 C2 não se recuperava depois de um NACK — resolvido (9703c07)
 
-Em `handover/rep03`, a leitura 10 recebe NACK aos 28,0 s (retransmissões do
-CoAP esgotadas) e, a partir daí, **todas** as leituras seguintes falham em
-~10 µs com `coap_send_recv=-2` ("Failed to transmit PDU"), até o fim da
-repetição. Em `rep04` a leitura 0 já falha e nenhuma das 30 chega. A sessão do
-libcoap fica inutilizável e o cliente nunca a recria.
+Sintoma original: em `handover/rep03`, a leitura 10 recebeu NACK aos 28,0 s
+(retransmissões do CoAP esgotadas) e, a partir daí, **todas** as leituras
+seguintes falhavam em ~10 µs com `coap_send_recv=-2` ("Failed to transmit
+PDU"), até o fim da repetição; em `rep04` nenhuma das 30 chegou. A sessão do
+libcoap 4.3.5 ficava inutilizável e esta versão não a reconecta sozinha. A
+entrega de 56,1 % e as 12 retransmissões do C2 sob handover eram artefato
+disso, não custo do OSCORE.
 
-Consequências: a entrega de 56,1 % e as 12 retransmissões do C2 sob handover
-são artefato. Com 20 % de perda e até 4 retransmissões por pedido, a entrega
-esperada do CoAP confirmável passa de 99 %. O artigo não pode reportar o C2
-sob perda enquanto isso não for corrigido.
+Correção em `channels/c2_telemetry/c2_client.c`: ao ver `-2` (falha de
+transmissão) ou `-4` (erro de I/O), o cliente recria contexto + sessão OSCORE
+(`c2_open_session()`) e segue. A leitura que falhou continua contando como
+perda; as seguintes voltam a valer. O número de sequência do OSCORE é
+persistido em arquivo a cada envio (`ssn_freq=1`), então o contexto
+reconstruído retoma de onde parou, sem reusar nonce e sem ser recusado pelo
+servidor pela janela anti-replay. O resumo do cliente passa a informar quantas
+sessões foram recriadas.
 
-O que fazer em `channels/c2_telemetry/c2_client.c`:
-- registrar o `reason` do NACK no log (hoje é descartado);
-- ao receber `-2`/`-3`, recriar a sessão (`coap_session_release` +
-  `coap_new_client_session_oscore3`) e contar o evento como
-  *restabelecimento*, não como perda — o contexto OSCORE em memória continua
-  o número de sequência, então não há conflito com a janela anti-replay;
-- validar com uma execução curta do C2 sob `handover` antes da campanha.
+Validado em loopback derrubando e reerguendo o servidor por ~42 s: 100
+leituras, 42 perdas e 21 recriações **na janela de queda**; assim que o
+servidor voltou, a entrega retornou a 100 % até o fim (58 respostas no total).
+Com o código antigo, ficariam ~5 respostas. A perda do C2 agora reflete só a
+indisponibilidade real do enlace.
 
 ### 3.3 CPU por mensagem inconsistente entre condições
 
@@ -233,7 +239,7 @@ O que se repete em quase todos e o testbed **não** tem:
 
 | # | Teste | Motivo | Custo |
 |---|---|---|---|
-| P0.1 | Corrigir §3.2 e rodar as três condições num commit só | dados comparáveis e completos | 1 correção + ~5 h de campanha |
+| P0.1 | ~~Corrigir §3.2~~ (feito, 9703c07) e rodar as três condições num commit só | dados comparáveis e completos | ~5 h de campanha |
 | P0.2 | Dispersão (IQR ou IC 95 %) no `summarize.py` | todo trabalho da tabela reporta | 1 h de script |
 | P0.3 | Sobrecarga e estabelecimento **pelo pcap** nos quatro canais | valida os contadores internos e cobre o C2; decompõe os 23,4 B do C2 em CoAP vs OSCORE | script sobre pcaps já colhidos |
 | P0.4 | Tratar §3.3 (CPU) por uma das três opções | a coluna não sustenta afirmação hoje | 2–4 h |
@@ -287,9 +293,7 @@ energia, Flash/RAM em microcontrolador, hardware de UAV, AKMA.
 
 Nada abaixo foi assumido; o documento só enumera.
 
-1. Corrigir o C2 (§3.2) **antes** da campanha, ou rodar já e refazer só o C2
-   depois? (Recomendo antes: são poucas linhas e evita uma segunda campanha de
-   3,5 h.)
+1. ~~Corrigir o C2 (§3.2) antes da campanha~~ — feito (9703c07) e validado.
 2. Qual tratamento para a CPU (§3.3): mediana+afinidade, `perf`, ou
    microbenchmark do wolfSSL?
 3. Sincronizar os relógios das VMs para o C3, ou manter só jitter?

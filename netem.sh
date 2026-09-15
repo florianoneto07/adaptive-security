@@ -39,13 +39,38 @@ set -uo pipefail
 #
 # A linha de base é rodar sem netem nenhum ("off"): sem ela não há como
 # atribuir uma degradação ao enlace em vez de ao perfil de segurança.
+#
+# Varreduras (P1), para as curvas do paper. Perfis paramétricos que variam UM
+# eixo de cada vez, ancorados nos valores do 3gpp-c2:
+#
+#   loss-<X>   delay 50ms, perda X%  (X pode ter casa decimal, ex.: loss-0.1)
+#   delay-<Y>  delay Yms, perda 0,1%  (Y inteiro, ex.: delay-100)
+#
+# A perda da varredura é INDEPENDENTE (sem correlação), diferente do handover,
+# que usa rajada de propósito: aqui cada ponto deve diferir SÓ na taxa, para a
+# curva ser limpa. A correlação em rajada é um segundo eixo, fora do escopo da
+# varredura. Aplicar nas DUAS VMs, como os demais perfis.
 
 profile_args() {
-  case "$1" in
-    3gpp-c2)  printf 'delay 50ms loss 0.1%%' ;;
-    handover) printf 'delay 200ms 20ms loss 20%% 25%%' ;;
-    *)        return 1 ;;
+  local p="$1"
+
+  case "${p}" in
+    3gpp-c2)  printf 'delay 50ms loss 0.1%%'; return 0 ;;
+    handover) printf 'delay 200ms 20ms loss 20%% 25%%'; return 0 ;;
   esac
+
+  # Varredura de perda: delay fixo de 50 ms, taxa variável (aceita decimal).
+  if [[ "${p}" =~ ^loss-([0-9]+(\.[0-9]+)?)$ ]]; then
+    printf 'delay 50ms loss %s%%' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  # Varredura de atraso: perda fixa de 0,1%, atraso variável (ms inteiros).
+  if [[ "${p}" =~ ^delay-([0-9]+)$ ]]; then
+    printf 'delay %sms loss 0.1%%' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  return 1
 }
 
 default_iface() {
@@ -58,6 +83,8 @@ usage() {
   echo "Perfis disponíveis:"
   echo "  3gpp-c2   $(profile_args 3gpp-c2)"
   echo "  handover  $(profile_args handover)"
+  echo "  loss-<X>  varredura de perda: $(profile_args loss-5) (ex.: loss-5)"
+  echo "  delay-<Y> varredura de atraso: $(profile_args delay-100) (ex.: delay-100)"
   echo "  off       remove qualquer emulação"
 }
 

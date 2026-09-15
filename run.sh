@@ -60,16 +60,26 @@ if [[ -n "${WOLFSSL_DIR}" ]]; then
 fi
 
 # canal:slug:prefixo:porta
+#
+# Os canais *-plain são os baselines SEM segurança (P1.3), para isolar o custo
+# do perfil. Não entram em "all"; rodam por pedido explícito de --channels. Usam
+# as mesmas portas dos canais seguros (nunca rodam juntos: são campanhas
+# distintas). A lógica por nome deriva o comportamento pelo nome-base
+# "${name%-plain}", de modo que bulk-plain herda o transporte TCP de bulk, etc.
 CHANNEL_SPEC=(
   "control:c1_control:c1:5001"
   "telemetry:c2_telemetry:c2:5002"
   "media:c3_media:c3:5003"
   "bulk:c4_bulk:c4:5004"
+  "control-plain:c1_plain:c1_plain:5001"
+  "telemetry-plain:c2_plain:c2_plain:5002"
+  "media-plain:c3_plain:c3_plain:5003"
+  "bulk-plain:c4_plain:c4_plain:5004"
 )
 
-# Canais em que o CLIENTE mede ida e volta. O de mídia fica de fora: o fluxo é
+# Canais em que o CLIENTE mede ida e volta. Os de mídia ficam de fora: o fluxo é
 # unidirecional e quem registra o atraso é o receptor.
-CHANNELS_WITH_CLIENT_RTT="control telemetry bulk"
+CHANNELS_WITH_CLIENT_RTT="control telemetry bulk control-plain telemetry-plain bulk-plain"
 
 # ---------------------------------------------------------------------------
 # Utilidades
@@ -178,7 +188,9 @@ for c in "${CHANNELS[@]}"; do
     fi
   done
   # A chave é por canal: sem ela o canal falha em voz alta, mas é melhor
-  # descobrir isso agora do que no meio de dez repetições.
+  # descobrir isso agora do que no meio de dez repetições. Os baselines *-plain
+  # não têm segurança e portanto não usam chave — pulam esta checagem.
+  [[ "${c}" == *-plain ]] && continue
   key_file="keys/${prefix}.key"
   if [[ ! -f "${key_file}" && -z "${!prefix:-}" ]]; then
     if [[ ! -f "${key_file}" ]]; then
@@ -322,7 +334,7 @@ run_channel() {
   # --- captura opcional -----------------------------------------------------
   if [[ "${CAPTURE}" -eq 1 ]]; then
     local proto="udp"
-    [[ "${name}" == "bulk" ]] && proto="tcp"
+    [[ "${name%-plain}" == "bulk" ]] && proto="tcp"
     pcap="${rep_dir}/${slug}.pcap"
     cap_if="$(capture_iface)"
     tcpdump -i "${cap_if}" -w "${pcap}" -U "${proto} port ${port}" \
@@ -365,7 +377,7 @@ run_channel() {
   # --- cliente --------------------------------------------------------------
   if [[ "${ROLE}" == "both" || "${ROLE}" == "client" ]]; then
     local -a args=(-H "${HOST}" -p "${port}" -o "${rep_dir}")
-    if [[ "${name}" == "bulk" ]]; then
+    if [[ "${name%-plain}" == "bulk" ]]; then
       args+=(-s "${BULK_MIB}")
     else
       args+=(-d "${DURATION}")
@@ -458,10 +470,10 @@ if [[ "${ROLE}" == "server" ]]; then
     port=$((port + PORT_OFFSET))
 
     srv_args=(-p "${port}" -o "${SRV_DIR}")
-    [[ "${c}" != "telemetry" ]] && srv_args+=(-k)
+    [[ "${c%-plain}" != "telemetry" ]] && srv_args+=(-k)
 
     if [[ "${CAPTURE}" -eq 1 ]]; then
-      proto="udp"; [[ "${c}" == "bulk" ]] && proto="tcp"
+      proto="udp"; [[ "${c%-plain}" == "bulk" ]] && proto="tcp"
       # Na interface da rota padrão, não em "any": capturar em "any" grava o
       # pseudo-cabeçalho LINUX_SLL2 de 20 bytes no lugar dos 14 do Ethernet, e
       # em loopback ainda duplica cada pacote. Sem interface conhecida, cai

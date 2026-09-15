@@ -35,6 +35,12 @@ CHANNELS = [
     ("c2_telemetry", "C2 telemetry", "datagrama"),
     ("c3_media", "C3 media", "datagrama"),
     ("c4_bulk", "C4 bulk", "fluxo"),
+    # Baselines SEM segurança (P1.3). Só aparecem numa campanha baseline; numa
+    # campanha segura os arquivos não existem e a linha é omitida.
+    ("c1_plain", "C1 claro", "datagrama"),
+    ("c2_plain", "C2 claro", "datagrama"),
+    ("c3_plain", "C3 claro", "datagrama"),
+    ("c4_plain", "C4 claro", "fluxo"),
 ]
 
 

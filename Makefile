@@ -46,10 +46,10 @@ LEGACY_TGTS := $(addprefix $(BUILD)/,$(LEGACY_BINS))
 
 CHANNELS := c1_control c2_telemetry c3_media c4_bulk
 
-.PHONY: all channels legacy check keys certs clean $(CHANNELS) $(LEGACY_BINS) \
-        c1 c2 c3 c4
+.PHONY: all channels legacy baseline check keys certs clean $(CHANNELS) \
+        $(LEGACY_BINS) c1 c2 c3 c4
 
-all: check legacy channels
+all: check legacy channels baseline
 
 # ---------------------------------------------------------------------------
 # Verificação da build do wolfSSL
@@ -71,6 +71,11 @@ channels: $(CHANNELS)
 # sem afetar os outros. O Makefile de cada um vive em channels/<canal>/.
 $(CHANNELS):
 	@$(MAKE) --no-print-directory -C channels/$@ WOLFSSL_DIR="$(WOLFSSL_DIR)"
+
+# Baselines sem segurança (P1.3), para isolar o custo do perfil. Ficam num
+# alvo próprio, mas entram em "all" para que um único "make" produza tudo.
+baseline:
+	@$(MAKE) --no-print-directory -C channels/baseline WOLFSSL_DIR="$(WOLFSSL_DIR)"
 
 # Atalhos curtos.
 c1: c1_control

@@ -55,6 +55,7 @@ static uint64_t g_seq;        /* leituras enviadas                          */
 static uint64_t g_responses;  /* respostas recebidas                        */
 static uint64_t g_retx;       /* retransmissões nativas do CoAP confirmável */
 static uint64_t g_nacks;      /* requisições que falharam de vez            */
+static uint64_t g_reestab;    /* sessões recriadas após o enlace derrubá-la */
 
 static void on_signal(int sig) { (void)sig; g_stop = 1; }
 
@@ -124,6 +125,56 @@ static int event_handler(coap_session_t *session, const coap_event_t event)
     return 0;
 }
 
+/*
+ * Cria contexto + sessão OSCORE do cliente, prontos para transacionar.
+ *
+ * Cada chamada monta um contexto novo, de propósito: é o que permite recriar a
+ * sessão no meio da execução quando o enlace a derruba (ver o laço principal).
+ * O número de sequência do OSCORE é persistido em arquivo a cada envio
+ * (ssn_freq=1, padrão do libcoap), então um contexto reconstruído retoma a
+ * numeração de onde o anterior parou — sem reusar nonce e sem ser recusado
+ * pelo servidor como repetição.
+ *
+ * Devolve 0 e preenche ctx_out e sess_out; -1 em erro, com a mensagem já em
+ * stderr. A posse do coap_oscore_conf_t passa para a sessão.
+ */
+static int c2_open_session(const unsigned char key[AS_PSK_LEN],
+                           const coap_address_t *addr,
+                           coap_context_t **ctx_out,
+                           coap_session_t **sess_out)
+{
+    coap_context_t *ctx;
+    coap_session_t *sess;
+    coap_oscore_conf_t *conf;
+
+    ctx = coap_new_context(NULL);
+    if (ctx == NULL) {
+        fprintf(stderr, "Erro ao criar o contexto CoAP.\n");
+        return -1;
+    }
+    coap_register_nack_handler(ctx, nack_handler);
+    coap_register_event_handler(ctx, event_handler);
+
+    /* R2: sem contexto OSCORE o canal não sobe — não há CoAP em claro aqui. */
+    conf = c2_oscore_conf(key, 0);
+    if (conf == NULL) {
+        coap_free_context(ctx);
+        return -1;
+    }
+
+    sess = coap_new_client_session_oscore3(ctx, NULL, addr, COAP_PROTO_UDP,
+                                           conf, NULL, NULL, NULL);
+    if (sess == NULL) {
+        fprintf(stderr, "Erro ao criar a sessão OSCORE do canal C2.\n");
+        coap_free_context(ctx);
+        return -1;
+    }
+
+    *ctx_out = ctx;
+    *sess_out = sess;
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const as_profile_t *profile = as_profile_get(AS_THIS_CHANNEL);
@@ -139,7 +190,6 @@ int main(int argc, char **argv)
     char fp[AS_KEY_FP_LEN];
     coap_context_t *ctx = NULL;
     coap_session_t *session = NULL;
-    coap_oscore_conf_t *oscore_conf = NULL;
     coap_addr_info_t *info = NULL;
     coap_str_const_t server_str;
     uint64_t deadline;
@@ -198,14 +248,6 @@ int main(int argc, char **argv)
     if (g_metrics == NULL)
         goto out;
 
-    ctx = coap_new_context(NULL);
-    if (ctx == NULL) {
-        fprintf(stderr, "Erro ao criar o contexto CoAP.\n");
-        goto out;
-    }
-    coap_register_nack_handler(ctx, nack_handler);
-    coap_register_event_handler(ctx, event_handler);
-
     server_str.s = (const uint8_t *)host;
     server_str.length = strlen(host);
     info = coap_resolve_address_info(&server_str, (uint16_t)port, (uint16_t)port,
@@ -224,21 +266,8 @@ int main(int argc, char **argv)
      */
     c2_seq_file_init(getenv("AS_KEY_DIR"), "c2.seq");
 
-    /* R2: sem contexto OSCORE o canal não sobe — não há CoAP em claro aqui. */
-    oscore_conf = c2_oscore_conf(key, 0);
-    memset(key, 0, sizeof(key));
-    if (oscore_conf == NULL)
+    if (c2_open_session(key, &info->addr, &ctx, &session) != 0)
         goto out;
-
-    session = coap_new_client_session_oscore3(ctx, NULL, &info->addr,
-                                              COAP_PROTO_UDP, oscore_conf,
-                                              NULL, NULL, NULL);
-    oscore_conf = NULL;   /* a posse passou para a sessão */
-    if (session == NULL) {
-        fprintf(stderr, "Erro ao criar a sessão OSCORE do canal %s.\n",
-                profile->slug);
-        goto out;
-    }
 
     /*
      * OSCORE não tem handshake, então não há tempo de estabelecimento no
@@ -255,7 +284,7 @@ int main(int argc, char **argv)
         coap_pdu_t *pdu, *response = NULL;
         uint64_t cpu0, t_send, rtt, cpu_used;
         long jitter, sleep_ms;
-        int res;
+        int res, reopen = 0;
 
         pdu = coap_new_pdu(COAP_MESSAGE_CON, COAP_REQUEST_CODE_GET, session);
         if (pdu == NULL) {
@@ -353,6 +382,17 @@ int main(int argc, char **argv)
             } else {
                 fprintf(stderr, "Leitura %llu falhou (coap_send_recv=%d).\n",
                         (unsigned long long)g_seq, res);
+                /*
+                 * -2 (falha ao transmitir) e -4 (erro de I/O) deixam a sessão
+                 * inutilizável: no libcoap 4.3.5 esta versão não a reconecta
+                 * sozinha, e sem recriá-la TODAS as leituras seguintes falham
+                 * em microssegundos até o fim da repetição — foi o que zerou o
+                 * C2 sob handover. A leitura atual já conta como perda; a
+                 * sessão é recriada abaixo para que as próximas voltem a valer.
+                 * Um timeout puro (-5) não fecha a sessão: aí é só perda.
+                 */
+                if (res == -2 || res == -4)
+                    reopen = 1;
             }
         }
 
@@ -360,6 +400,23 @@ int main(int argc, char **argv)
             coap_delete_pdu(response);
         coap_delete_pdu(pdu);
         g_seq++;
+
+        if (reopen) {
+            coap_session_release(session);
+            coap_free_context(ctx);
+            session = NULL;
+            ctx = NULL;
+            if (c2_open_session(key, &info->addr, &ctx, &session) != 0) {
+                fprintf(stderr, "Canal %s: não foi possível recriar a sessão "
+                                "após o enlace derrubá-la; encerrando.\n",
+                        profile->slug);
+                goto out;
+            }
+            g_reestab++;
+            fprintf(stderr, "Canal %s: sessão OSCORE recriada (%llu no total); "
+                            "o número de sequência foi retomado do arquivo.\n",
+                    profile->slug, (unsigned long long)g_reestab);
+        }
 
         /*
          * Período com jitter uniforme em [-jitter, +jitter], descontado o
@@ -380,9 +437,10 @@ int main(int argc, char **argv)
     }
 
     printf("Enviadas %llu leituras, %llu respostas, %llu retransmissões CoAP, "
-           "%llu falhas.\n",
+           "%llu falhas, %llu sessões recriadas.\n",
            (unsigned long long)g_seq, (unsigned long long)g_responses,
-           (unsigned long long)g_retx, (unsigned long long)g_nacks);
+           (unsigned long long)g_retx, (unsigned long long)g_nacks,
+           (unsigned long long)g_reestab);
 
     /*
      * R2: um canal que enviou tudo e não recebeu nada falhou, e precisa dizer
@@ -400,14 +458,14 @@ int main(int argc, char **argv)
     }
 
 out:
+    /* A chave viveu na pilha toda a execução para permitir recriar a sessão. */
+    memset(key, 0, sizeof(key));
     if (g_metrics != NULL)
         as_metrics_close(g_metrics);
     if (session != NULL)
         coap_session_release(session);
     if (info != NULL)
         coap_free_address_info(info);
-    if (oscore_conf != NULL)
-        coap_delete_oscore_conf(oscore_conf);
     if (ctx != NULL)
         coap_free_context(ctx);
     coap_cleanup();

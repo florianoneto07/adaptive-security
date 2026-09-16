@@ -423,3 +423,88 @@ repetir P1.1/P1.2 com `--channels "...-plain"` — dobra o tempo das varreduras.
 
 Ordem sugerida pela duração: P1.2 (~1,5 h, perda baixa) → P1.3 (~2 h) → P1.1
 (~3 h, o C4 sob 10–20 % domina). Nenhuma precisa de operador presente.
+
+---
+
+## 10. Resultados do P1 (2026-09-16) — completo
+
+Quatro campanhas, todas com 5 repetições por ponto:
+
+| Campanha | Diretório | Cobertura |
+|---|---|---|
+| P1.1 perda | `campaign-20260916T142149Z-3717e9a` | loss-0 … loss-10 |
+| P1.1 perda (20 %) | `campaign-20260916T182845Z-606a0af` | loss-20, bulk de **1 MiB** |
+| P1.2 atraso | `campaign-20260916T112433Z-3717e9a` | delay-0 … delay-200 |
+| P1.3 baseline | `campaign-20260916T124934Z-3717e9a` | clean, 3gpp-c2, handover, canais em claro |
+
+### 10.1 Estabelecimento = k × RTT (P1.2) — o resultado mais limpo
+
+Com o netem nas duas pontas, RTT = 2 × delay. Estabelecimento (ms):
+
+| delay | RTT | C1 DTLS | C2 OSCORE | C3 SRTP | C4 TLS |
+|---|---|---|---|---|---|
+| 0 | 0 | 13,6 | 2,0 | 12,5 | 6,3 |
+| 25 | 50 | 163,0 | 52,6 | 163,0 | 105,7 |
+| 50 | 100 | 313,3 | 102,2 | 312,9 | 205,5 |
+| 100 | 200 | 613,3 | 202,5 | 613,2 | 405,9 |
+| 200 | 400 | 1213,1 | 402,4 | 1212,8 | 805,7 |
+
+Regressão visual imediata: **C2 = 1 RTT, C4 = 2 RTT, C1 e C3 = 3 RTT**, mais um
+custo fixo de 2–13 ms. Confirma a previsão da §2.4 com cinco pontos, e dá a
+figura mais forte do artigo: o perfil determina o número de idas e voltas, e o
+enlace multiplica.
+
+### 10.2 Degradação com a perda (P1.1)
+
+| perda | C1 estab. / entrega | C3 estab. / entrega | C2 entrega | C4 vazão |
+|---|---|---|---|---|
+| 0 % | 313 ms / 100 % | 313 ms / 99,9 % | 100 % | 40,1 Mbps |
+| 0,1 % | 314 ms / 99,9 % | 313 ms / 99,9 % | 100 % | 43,6 Mbps |
+| 1 % | 313 ms / 99,1 % | 313 ms / 99,0 % | 100 % | 2,23 Mbps |
+| 5 % | 313 ms / 95,0 % | 670 ms / 95,0 % | 100 % | 0,700 Mbps |
+| 10 % | 1703 ms / 89,5 % | 668 ms / 90,0 % | 100 % | 0,293 Mbps |
+| 20 % | 4537 ms / 80,5 % | 2729 ms / 79,9 % | 100 % | 0,017 Mbps |
+
+Três leituras:
+
+1. **A entrega de DTLS e SRTP acompanha a perda** (100 → 80 %), porque não
+   retransmitem dados de aplicação. CoAP/OSCORE e TCP ficam em 100 % o tempo
+   todo — o preço aparece em latência (C2: p95 de 30,6 s a 20 %) e em vazão
+   (C4: 0,017 Mbps, quatro ordens de grandeza abaixo do enlace limpo).
+2. **O estabelecimento degrada de forma não-linear**: estável até 5 %, depois
+   dispara (313 → 1703 → 4537 ms) com as retransmissões do handshake.
+3. **A 20 % de perda o handshake DTLS falha com frequência**: o C1 perdeu 3 de
+   5 repetições e o C3, 2 de 5. É resultado, não defeito — sob handover (20 %
+   em RAJADA) não falhou nenhuma, porque a rajada deixa janelas limpas. A
+   coluna `reps_sem_dados` do `resumo.csv` traz essa taxa.
+
+### 10.3 Custo da segurança (P1.3)
+
+Comparando cada canal seguro com seu baseline em claro, na mesma condição:
+
+| Canal | Estabelecimento | Overhead por mensagem | Entrega |
+|---|---|---|---|
+| C1 DTLS 1.3 | 0 → 8,8 ms (clean) / 3754 ms (handover) | 0 → **22 B** | 89,7 vs 90,0 % |
+| C2 OSCORE | ~0 (1,1 vs 1,5 ms) | 35/46 B → 46/57 B = **+11 B** | 100 vs 100 % |
+| C3 DTLS-SRTP | 0 → 6,9 ms / 4210 ms | 12 → 28 B = **+16 B** | 89,8 vs 90,0 % |
+| C4 TLS 1.3 | 0 → 3,3 ms / 823 ms | 0 → **22 B** | 100 vs 100 % |
+
+O achado central: **a segurança custa estabelecimento e bytes, não
+confiabilidade.** A entrega do canal seguro é indistinguível da do canal em
+claro em todas as condições — a perda vem do enlace, não do perfil. E o OSCORE
+é o mais barato por mensagem (+11 B contra +22 B do DTLS/TLS), coerente com
+Gunnarsson et al. e Gündoğan et al. (§5), com a contrapartida de exigir uma
+requisição de 46 B que os canais unidirecionais não têm.
+
+### 10.4 Dois defeitos de agregação achados na verificação
+
+- **Medianas contaminadas por repetições falhas.** Uma repetição cujo handshake
+  não fechou grava um resumo zerado, e esses zeros entravam nas medianas: no
+  loss-20 o C1 tinha 4917 amostras de RTT em 2 repetições boas, mas as 3 falhas
+  faziam a mediana dar p50 = 0,00 ms, e REPS afirmava 5. Corrigido em 2806793:
+  só entram nos agregados as repetições que trocaram dados, e as descartadas
+  viram a coluna `reps_sem_dados`.
+- **Vazão exibida com uma casa decimal** mostrava "0.0 Mbps" para 17 kbps.
+  Idem 2806793.
+
+Todos os `resumo.csv` foram regenerados com o script corrigido.

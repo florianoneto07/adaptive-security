@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -76,6 +77,8 @@ static int serve_stream(WOLFSSL_CTX *ctx, int port,
     uint64_t t_start, cpu_start;
     uint32_t expected = 0, received = 0;
     int first = 1;
+    /* Piso do atraso neste fluxo; remove a diferença de uptimes das VMs. */
+    int64_t min_diff = INT64_MAX;
     struct timeval tv;
 
     fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -238,12 +241,29 @@ static int serve_stream(WOLFSSL_CTX *ctx, int port,
         as_metrics_recv(m, seq, (size_t)(len - C3_RTP_HDR_LEN), cpu_verify);
 
         /*
-         * Atraso unidirecional. Sem relógios sincronizados entre as VMs, o
-         * valor carrega um deslocamento constante desconhecido: as diferenças
-         * entre percentis valem, os valores absolutos não.
+         * Atraso unidirecional, medido RELATIVO AO PISO observado no fluxo.
+         *
+         * CLOCK_MONOTONIC conta desde o boot de CADA máquina, então
+         * (now - sent_ns) é o atraso real MAIS a diferença de uptimes entre as
+         * VMs — um deslocamento constante e desconhecido, que pode ser
+         * negativo. A versão anterior descartava a amostra quando dava
+         * negativo (`if (now > sent_ns)`), e como o deslocamento costuma ser
+         * negativo isso zerou o atraso do C3 em 9 de 11 condições do P1:
+         * rtt_samples=0, coluna vazia.
+         *
+         * Subtrair o mínimo observado remove o deslocamento e deixa o que
+         * interessa e sempre não-negativo: a variação do atraso acima do piso.
+         * As DIFERENÇAS entre percentis (p99-p50) são idênticas às de antes —
+         * é o que o README manda usar. O valor absoluto continua sem sentido
+         * físico, agora por construção: o piso do fluxo é o zero.
          */
-        if (now > sent_ns)
-            as_metrics_rtt(m, seq, now - sent_ns);
+        {
+            int64_t diff = (int64_t)now - (int64_t)sent_ns;
+
+            if (diff < min_diff)
+                min_diff = diff;
+            as_metrics_rtt(m, seq, (uint64_t)(diff - min_diff));
+        }
 
     }
 

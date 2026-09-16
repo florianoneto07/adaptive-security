@@ -9,7 +9,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <unistd.h>
+#include <errno.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -66,7 +68,6 @@ int main(int argc, char **argv)
         default:  usage(argv[0]); return 1;
         }
     }
-    (void)keep_running;
     if (port <= 0 || port > 65535) { fprintf(stderr, "Porta inválida: %d\n", port); return 1; }
 
     if (as_install_stop_handler(on_signal) != 0) { perror("sigaction"); return 1; }
@@ -89,45 +90,87 @@ int main(int argc, char **argv)
 
     printf("Canal %s aguardando na porta %d...\n", profile.slug, port);
 
-    tv.tv_sec = IDLE_TIMEOUT_S;
-    tv.tv_usec = 0;
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    /*
+     * Um fluxo por repetição da campanha, como no c3_server seguro.
+     *
+     * O timeout de ociosidade só vale DEPOIS que o fluxo começou: entre
+     * repetições o cliente leva minutos para chegar ao canal de mídia (roda
+     * control e telemetry antes), e aplicar o timeout à espera do primeiro
+     * pacote encerrava o servidor antes da hora — a porta fechava e o cliente
+     * recebia "Connection refused" em todas as repetições.
+     */
+    do {
+        struct timeval tv_block = { 0, 0 };   /* 0 = bloqueia sem timeout */
+        int in_flow = 0;
+        /* Piso do atraso deste fluxo; zera a diferença de uptimes. */
+        int64_t min_diff = INT64_MAX;
 
-    while (!g_stop) {
-        ssize_t n = recv(fd, pkt, sizeof(pkt), 0);
-        uint32_t seq;
-        uint64_t sent_ns, now;
+        first = 1;
+        expected = 0;
+        received = 0;
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv_block, sizeof(tv_block));
 
-        if (n < 0)
-            break;   /* silêncio por IDLE_TIMEOUT_S: fluxo terminou */
-        if (!is_rtp(pkt, (size_t)n))
-            continue;
+        while (!g_stop) {
+            ssize_t n = recv(fd, pkt, sizeof(pkt), 0);
+            uint32_t seq;
+            uint64_t sent_ns, now;
 
-        as_metrics_wire_rx(m, (uint64_t)n, 1);
-        now = as_mono_ns();
+            if (n < 0) {
+                if (errno == EINTR)
+                    continue;   /* sinal: quem decide parar é g_stop */
+                break;          /* silêncio por IDLE_TIMEOUT_S: fluxo terminou */
+            }
+            if (!is_rtp(pkt, (size_t)n))
+                continue;
 
-        if (n < RTP_HDR_LEN + AS_HDR_LEN)
-            continue;
+            as_metrics_wire_rx(m, (uint64_t)n, 1);
+            now = as_mono_ns();
 
-        seq = as_get_u32(pkt + RTP_HDR_LEN);
-        sent_ns = as_get_u64(pkt + RTP_HDR_LEN + 4);
+            if (n < RTP_HDR_LEN + AS_HDR_LEN)
+                continue;
 
-        if (first) {
-            first = 0;
-        } else if (seq > expected) {
-            uint32_t gap;
-            for (gap = expected; gap < seq; gap++)
-                as_metrics_lost(m, gap);
+            /* Primeiro pacote do fluxo: a partir daqui o silêncio o encerra. */
+            if (!in_flow) {
+                in_flow = 1;
+                tv.tv_sec = IDLE_TIMEOUT_S;
+                tv.tv_usec = 0;
+                setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            }
+
+            seq = as_get_u32(pkt + RTP_HDR_LEN);
+            sent_ns = as_get_u64(pkt + RTP_HDR_LEN + 4);
+
+            if (first) {
+                first = 0;
+            } else if (seq > expected) {
+                uint32_t gap;
+                for (gap = expected; gap < seq; gap++)
+                    as_metrics_lost(m, gap);
+            }
+            expected = seq + 1;
+            received++;
+
+            as_metrics_recv(m, seq, (size_t)(n - RTP_HDR_LEN), 0);
+
+            /*
+             * Atraso relativo ao piso do fluxo — mesmo método do c3_server
+             * seguro, para os dois serem comparáveis. CLOCK_MONOTONIC conta
+             * desde o boot de cada VM, então (now - sent_ns) carrega a
+             * diferença de uptimes; descartar os negativos zerava a coluna.
+             */
+            {
+                int64_t diff = (int64_t)now - (int64_t)sent_ns;
+
+                if (diff < min_diff)
+                    min_diff = diff;
+                as_metrics_rtt(m, seq, (uint64_t)(diff - min_diff));
+            }
         }
-        expected = seq + 1;
-        received++;
 
-        as_metrics_recv(m, seq, (size_t)(n - RTP_HDR_LEN), 0);
-        if (now > sent_ns)
-            as_metrics_rtt(m, seq, now - sent_ns);
-    }
+        if (in_flow)
+            printf("Fluxo encerrado: %u pacotes recebidos.\n", received);
+    } while (keep_running && !g_stop);
 
-    printf("Fluxo encerrado: %u pacotes recebidos.\n", received);
     rc = 0;
 
 out:

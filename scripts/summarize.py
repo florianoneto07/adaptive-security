@@ -127,9 +127,23 @@ def analyse(slug, label, transport, data):
     cli, srv = data["client"], data["server"]
     if not cli and not srv:
         return None
-
-    row = {"canal": label, "reps": len(cli) or len(srv)}
     ref = (cli or srv)[0]
+
+    # Repetições que não chegaram a trocar dados (tipicamente handshake que não
+    # fechou sob perda alta) gravam um resumo ZERADO. Incluí-las nas medianas
+    # arrastava o resultado para zero: no loss-20 o C1 tinha 4917 amostras de
+    # RTT em 2 repetições boas, mas 3 falhas faziam a mediana de
+    # [0,0,0,x,y] dar 0,00 ms — e a coluna REPS dizia 5. São descartadas dos
+    # agregados e contadas à parte: quantas falharam é resultado, não ruído.
+    todas_cli, todas_srv = cli, srv
+    cli = [r for r in todas_cli if r.get("msgs_sent")]
+    srv = [r for r in todas_srv if r.get("msgs_recv")]
+    if not cli and not srv:
+        cli, srv = todas_cli, todas_srv     # nada rodou: reporta o que há
+
+    row = {"canal": label,
+           "reps": len(cli) or len(srv),
+           "reps_sem_dados": (len(todas_cli) - len(cli)) if todas_cli else 0}
     row["perfil"] = ref.get("profile", "?")
 
     # --- estabelecimento ---
@@ -314,7 +328,10 @@ def main():
     for r in rows:
         if r.get("mbps") is not None:
             print()
-            print(f"  {r['canal']}: transferência a {r['mbps']:.1f} Mbps. As colunas de")
+            # 3 casas abaixo de 1 Mbps: sob perda alta a vazão cai para
+            # dezenas de kbps e ".1f" mostrava "0.0 Mbps".
+            prec = 1 if r['mbps'] >= 1 else 3
+            print(f"  {r['canal']}: transferência a {r['mbps']:.{prec}f} Mbps. As colunas de")
             print("  percentil trazem o tempo da transferência COMPLETA, uma amostra por")
             print("  repetição — não são latência por mensagem como nos outros canais.")
 
@@ -338,6 +355,14 @@ def main():
             r["entrega_pct"] = None
 
     notas = []
+    sem_dados = [(r["canal"], r["reps_sem_dados"]) for r in rows
+                 if r.get("reps_sem_dados")]
+    if sem_dados:
+        notas.append("REPS conta só as repetições que trocaram dados. Sem dados "
+                     "(handshake não fechou): "
+                     + ", ".join(f"{c} {n}" for c, n in sem_dados)
+                     + ". É resultado sob perda alta, não ruído — reportar como "
+                       "taxa de falha de estabelecimento")
     if any(r.get("cpu_msg_us") is not None for r in rows):
         notas.append("CPU/msg é a mediana do custo de CPU do caminho de envio "
                      "numa VM (chamada de sistema + contabilidade do escalonador), "

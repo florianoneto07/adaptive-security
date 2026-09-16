@@ -203,6 +203,36 @@ dedicada de CPU, fora do caminho crítico da campanha.
   (§6, P1). Decisão pendente: reduzir o `--bulk-size` nas condições
   degradadas e declarar no texto.
 
+### 3.5 Achados na primeira tentativa do P1 (2026-09-16)
+
+As três campanhas do P1 rodaram, mas o canal de mídia falhou. Três defeitos,
+todos corrigidos:
+
+- **`media-plain` falhou 5/5 em todas as condições** (`send: Connection
+  refused`). O `c3_plain_server` aplicava o timeout de ociosidade de 5 s já na
+  espera do PRIMEIRO pacote e saía, ignorando `-k`; como o cliente só chega ao
+  canal de mídia depois de control e telemetry (~2 min), a porta já estava
+  fechada. Corrigido em 2dbee87.
+- **Atraso do C3 vazio em 9 de 11 condições** (`rtt_samples=0`).
+  CLOCK_MONOTONIC conta desde o boot de cada VM, então a diferença
+  receptor-emissor carrega o desvio de uptimes, em geral negativo, e o guard
+  descartava todas as amostras. Passa a medir relativo ao piso do fluxo
+  (003ae78) — os percentis relativos, que é o que o README manda usar, ficam
+  preservados. Validado entre as VMs: 2074 amostras de 2084 pacotes.
+- **Disco cheio abortou a varredura de perda.** Numa campanha de varredura,
+  1031 MB de 1084 MB eram pcap e só 53 MB eram dados; o C3 sozinho gera
+  ~153 MB por condição, o C2 ~0 MB. Como o pcap só é indispensável no C2,
+  `--capture-channels` (26c95d5) limita a captura e derruba a campanha para
+  ~55 MB.
+
+Não é defeito, e vale como resultado: o `media` **seguro** falhou 1/5 em
+loss-10 e 2/5 em loss-20 — o handshake DTLS não sobrevive a 20 % de perda
+INDEPENDENTE dentro do orçamento de retransmissão (1 s a 8 s). Sob handover
+(20 % em rajada) ele passou 10/10, porque a rajada deixa janelas limpas. Vale
+reportar como taxa de falha de estabelecimento, não esconder.
+
+---
+
 ---
 
 ## 4. O que a campanha entregou (feito)
@@ -361,7 +391,8 @@ As três campanhas do P1, no servidor (cada uma grava seu próprio
 **P1.1 — varredura de perda** (6 pontos, 50 ms fixos):
 
 ```
-./campaign.sh --client-ssh lab-client --host 192.168.218.130 --capture \
+./campaign.sh --client-ssh lab-client --host 192.168.218.130 \
+  --capture --capture-channels telemetry \
   --conditions loss-0,loss-0.1,loss-1,loss-5,loss-10,loss-20 \
   --repeat 5 --bulk-size 8
 ```
@@ -369,7 +400,8 @@ As três campanhas do P1, no servidor (cada uma grava seu próprio
 **P1.2 — varredura de atraso** (5 pontos, 0,1 % de perda fixos):
 
 ```
-./campaign.sh --client-ssh lab-client --host 192.168.218.130 --capture \
+./campaign.sh --client-ssh lab-client --host 192.168.218.130 \
+  --capture --capture-channels telemetry \
   --conditions delay-0,delay-25,delay-50,delay-100,delay-200 \
   --repeat 5 --bulk-size 8
 ```
@@ -377,7 +409,8 @@ As três campanhas do P1, no servidor (cada uma grava seu próprio
 **P1.3 — controle sem segurança** (canais em claro, nas três condições base):
 
 ```
-./campaign.sh --client-ssh lab-client --host 192.168.218.130 --capture \
+./campaign.sh --client-ssh lab-client --host 192.168.218.130 \
+  --capture --capture-channels telemetry-plain \
   --conditions clean,3gpp-c2,handover --repeat 5 --bulk-size 8 \
   --channels "control-plain telemetry-plain media-plain bulk-plain"
 ```

@@ -23,6 +23,9 @@
 #                         Reduza nas varreduras de perda alta, onde 32 MiB leva
 #                         dezenas de minutos por repetição.
 #   --capture             grava pcap (necessário para bytes no fio do C2)
+#   --capture-channels L  captura só estes canais. O pcap só é indispensável no
+#                         C2 (~0 MB); capturar o C3 custa ~153 MB por condição e
+#                         já encheu o disco da VM.
 #   --out DIR             raiz da campanha (padrão results)
 #   --dry-run             mostra o que faria, sem executar
 #
@@ -48,6 +51,7 @@ REPEAT=10
 CHANNELS="all"
 BULK_MIB=""          # vazio: usa o padrão do run.sh (32 MiB)
 CAPTURE=0
+CAPTURE_CHANNELS=""   # vazio: captura todos os canais da campanha
 OUT_ROOT="results"
 DRY_RUN=0
 
@@ -67,6 +71,7 @@ while [[ $# -gt 0 ]]; do
     --bulk-size)  BULK_MIB="${2:-}"; shift 2 ;;
     --out)        OUT_ROOT="${2:-}"; shift 2 ;;
     --capture)    CAPTURE=1; shift ;;
+    --capture-channels) CAPTURE_CHANNELS="${2:-}"; shift 2 ;;
     --dry-run)    DRY_RUN=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     *) echo "Opção desconhecida: $1" >&2; usage >&2; exit 1 ;;
@@ -207,7 +212,7 @@ log " duração     ${DURATION}s x ${REPEAT} repetições por condição"
 [[ -n "${BULK_MIB}" ]] && log " bulk C4     ${BULK_MIB} MiB (padrão 32)"
 log " cliente     ${CLIENT_SSH}:${CLIENT_DIR}"
 log " servidor    ${HOST}"
-[[ "${CAPTURE}" -eq 1 ]] && log " captura     pcap habilitado"
+[[ "${CAPTURE}" -eq 1 ]] && log " captura     pcap habilitado${CAPTURE_CHANNELS:+ (só: ${CAPTURE_CHANNELS})}"
 log ""
 
 # Estimativa: ajuda a decidir se dá para acompanhar ou se é caso de deixar
@@ -299,6 +304,7 @@ run_condition() {
 
   srv_args=(--role server --out "${srv_out}" --duration "${DURATION}" --repeat "${REPEAT}")
   [[ "${CAPTURE}" -eq 1 ]] && srv_args+=(--capture)
+  [[ -n "${CAPTURE_CHANNELS}" ]] && srv_args+=(--capture-channels "${CAPTURE_CHANNELS}")
   # shellcheck disable=SC2206
   srv_args+=(${CHANNELS})
 

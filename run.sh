@@ -22,6 +22,9 @@
 #   --out DIR                  raiz dos resultados (padrão: results)
 #   --netem PERFIL             aplica o perfil antes e remove depois
 #   --capture                  grava pcap por canal (exige CAP_NET_RAW)
+#   --capture-channels LISTA   captura só estes canais (padrão: todos os pedidos).
+#                              O pcap só é indispensável no C2; o C3 gera ~153 MB
+#                              por condição e enche o disco à toa.
 #   --allow-stale              mede mesmo com binário mais antigo que o código
 #   --port-offset N            desloca todas as portas, para rodar em paralelo
 #   --list                     lista os canais e sai
@@ -45,6 +48,7 @@ BULK_MIB=32          # padrão do testbed
 OUT_ROOT="results"
 NETEM_PROFILE=""
 CAPTURE=0
+CAPTURE_CHANNELS=""   # vazio: captura todos os canais pedidos
 PORT_OFFSET=0
 ALLOW_STALE=0
 
@@ -85,7 +89,9 @@ CHANNELS_WITH_CLIENT_RTT="control telemetry bulk control-plain telemetry-plain b
 # Utilidades
 # ---------------------------------------------------------------------------
 
-usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; }
+# Imprime o cabeçalho de comentário até a primeira linha de código, sem
+# depender de um número de linha fixo (que defasa ao editar o cabeçalho).
+usage() { awk 'NR>=2 && /^#/{sub(/^# ?/,""); print; next} NR>=2{exit}' "${BASH_SOURCE[0]}"; }
 
 spec_for() {
   local name="$1" entry
@@ -93,6 +99,18 @@ spec_for() {
     [[ "${entry%%:*}" == "${name}" ]] && { printf '%s' "${entry}"; return 0; }
   done
   return 1
+}
+
+# Capturar este canal?
+#
+# O pcap só é INDISPENSÁVEL no C2, que não tem contadores de fio (libcoap
+# gerencia os próprios sockets). Nos demais ele é conferência independente, e
+# custa caro: o C3 a 4 Mbps gera ~153 MB por condição, contra ~0 MB do C2. Uma
+# campanha inteira capturando tudo passa de 1 GB e encheu o disco da VM.
+should_capture() {
+  [[ "${CAPTURE}" -eq 1 ]] || return 1
+  [[ -z "${CAPTURE_CHANNELS}" ]] && return 0
+  [[ " ${CAPTURE_CHANNELS} " == *" ${1} "* ]]
 }
 
 # Interface da rota padrão: onde o netem age.
@@ -137,6 +155,7 @@ while [[ $# -gt 0 ]]; do
     --netem)       NETEM_PROFILE="${2:-}"; shift 2 ;;
     --port-offset) PORT_OFFSET="${2:-}"; shift 2 ;;
     --capture)     CAPTURE=1; shift ;;
+    --capture-channels) CAPTURE_CHANNELS="${2:-}"; shift 2 ;;
     --allow-stale) ALLOW_STALE=1; shift ;;
     --list)
       printf '%-12s %-14s %s\n' CANAL SLUG PORTA
@@ -332,7 +351,7 @@ run_channel() {
   client_log="${rep_dir}/${slug}_client.log"
 
   # --- captura opcional -----------------------------------------------------
-  if [[ "${CAPTURE}" -eq 1 ]]; then
+  if should_capture "${name}"; then
     local proto="udp"
     [[ "${name%-plain}" == "bulk" ]] && proto="tcp"
     pcap="${rep_dir}/${slug}.pcap"
@@ -472,7 +491,7 @@ if [[ "${ROLE}" == "server" ]]; then
     srv_args=(-p "${port}" -o "${SRV_DIR}")
     [[ "${c%-plain}" != "telemetry" ]] && srv_args+=(-k)
 
-    if [[ "${CAPTURE}" -eq 1 ]]; then
+    if should_capture "${c}"; then
       proto="udp"; [[ "${c%-plain}" == "bulk" ]] && proto="tcp"
       # Na interface da rota padrão, não em "any": capturar em "any" grava o
       # pseudo-cabeçalho LINUX_SLL2 de 20 bytes no lugar dos 14 do Ethernet, e

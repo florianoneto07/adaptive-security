@@ -97,8 +97,10 @@ run_remote() { ssh -o BatchMode=yes -o ConnectTimeout=20 "${CLIENT_SSH}" "$@"; }
 # ponto. O intervalo é escolha de engenharia do testbed, não vem da literatura.
 POLL_INTERVAL=15
 poll_remote() {
-  timeout 90 ssh -o BatchMode=yes -o ConnectTimeout=15 \
-    -o ServerAliveInterval=10 -o ServerAliveCountMax=3 "${CLIENT_SSH}" "$@"
+  # ConnectTimeout generoso: a 20% de perda o handshake do ssh raramente fecha
+  # em 15 s, e a campanha ficava cega justamente na condição mais interessante.
+  timeout 120 ssh -o BatchMode=yes -o ConnectTimeout=45 \
+    -o ServerAliveInterval=15 -o ServerAliveCountMax=4 "${CLIENT_SSH}" "$@"
 }
 
 # Comando de uma sondagem: código de saída (se já houver), se o processo vive,
@@ -372,14 +374,31 @@ run_condition() {
   local shown=0 out="" body="" cli_rc="" size=0 pad=0
   local rc_line alive_line size_line dead_polls=0 warned_slow=0 t0 elapsed
   local nominal=$(( REPEAT * n_ch * DURATION ))
+  local fail_polls=0 warned_blind=0
+  # Teto absoluto da condição. Sem ele o laço era infinito: se o cliente morre
+  # sem gravar o rc E o ssh nunca completa, nada quebra a espera. Generoso de
+  # propósito — sob perda alta o volumoso leva horas legitimamente.
+  local hard_cap=$(( 20 * nominal + 3600 ))
   t0=$(date +%s)
   : > "${cond_dir}/cliente.log"
   while :; do
     sleep "${POLL_INTERVAL}"
     if ! out="$(poll_remote "$(poll_cmd "${remote_ctl}" "${shown}")")"; then
-      warn " sondagem falhou (ssh); repetindo em ${POLL_INTERVAL}s"
+      fail_polls=$(( fail_polls + 1 ))
+      if (( fail_polls == 20 && warned_blind == 0 )); then
+        warn " 20 sondagens seguidas falharam: o ssh não atravessa o enlace"
+        warn " degradado. É esperado sob perda alta; o cliente segue rodando na"
+        warn " outra VM e a campanha continua tentando."
+        warned_blind=1
+      fi
+      if (( $(date +%s) - t0 > hard_cap )); then
+        warn " teto da condição atingido (${hard_cap}s) sem contato com o cliente; abortando esta condição"
+        cli_rc=255
+        break
+      fi
       continue
     fi
+    fail_polls=0
     rc_line="$(sed -n 1p <<< "${out}")"
     alive_line="$(sed -n 2p <<< "${out}")"
     size_line="$(sed -n 3p <<< "${out}")"
@@ -416,6 +435,11 @@ run_condition() {
       dead_polls=0
     fi
     elapsed=$(( $(date +%s) - t0 ))
+    if (( elapsed > hard_cap )); then
+      warn " teto da condição atingido (${hard_cap}s); abortando esta condição"
+      cli_rc=255
+      break
+    fi
     if (( elapsed > 2 * nominal + 600 && warned_slow == 0 )); then
       warn " cliente já passou do dobro do tempo nominal (${elapsed}s); seguindo, o volumoso demora sob perda"
       warned_slow=1

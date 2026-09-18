@@ -116,6 +116,36 @@ echo "==> autogen"
 #                     como 0 e aborta o build. Passar pelo C_EXTRA_FLAGS o
 #                     grava no options.h, onde o libcoap consegue vê-lo.
 #                     O valor 8 é o recomendado em src/coap_wolfssl.c
+#
+# Aceleração por hardware em x86-64 (acrescentada em 2026-09-18):
+#   --enable-intelasm liga AES-NI + PCLMULQDQ para o AES-GCM/CCM e o código
+#                     AVX2 do SHA-2 e do ChaCha20, com detecção por cpuid em
+#                     tempo de execução. Sem isso o AES-256-GCM roda em C puro
+#                     (138 MiB/s nesta VM) e o custo de CPU por mensagem do
+#                     TLS/DTLS mede a cifra em software, não o protocolo: as
+#                     campanhas anteriores a esta data foram colhidas assim.
+#                     ATENÇÃO: WOLFSSL_AESNI muda o layout da struct Aes
+#                     (wolfssl/wolfcrypt/aes.h), e o libcoap a aloca na pilha
+#                     (src/coap_wolfssl.c). Depois desta recompilação, o
+#                     libcoap PRECISA ser recompilado (setup_libcoap.sh), senão
+#                     corrompe memória sem aviso.
+#   --enable-sp --enable-sp-asm
+#                     aritmética "single precision" com assembly x86-64 para o
+#                     ECDHE P-256 do handshake (e RSA/DH 2048/3072, não usados).
+#                     Sem isso a curva roda em C genérico (0,41 ms por acordo
+#                     nesta VM) e domina a CPU do handshake dos quatro canais.
+#
+# Exigido pelo periódico (modo 0-RTT do TLS 1.3 PSK, TS 33.535 Anexo B):
+#   --enable-earlydata
+#                     compila wolfSSL_write_early_data()/read_early_data() e
+#                     wolfSSL_CTX_set_max_early_data(). Não muda o comportamento
+#                     dos binários atuais: o servidor só aceita early data se
+#                     chamar set_max_early_data() com valor > 0, e nenhum canal
+#                     chama.
+#
+# As duas checagens de aceleração (AESNI, SP_ASM) valem para x86-64. Numa
+# porta para ARM (fora de escopo nesta fase) seriam WOLFSSL_ARMASM e o
+# --enable-armasm correspondente.
 echo "==> configure (prefixo: ${PREFIX})"
 ./configure \
   --prefix="${PREFIX}" \
@@ -131,6 +161,10 @@ echo "==> configure (prefixo: ${PREFIX})"
   --enable-alpn \
   --enable-sni \
   --enable-keylog-export \
+  --enable-intelasm \
+  --enable-sp \
+  --enable-sp-asm \
+  --enable-earlydata \
   C_EXTRA_FLAGS="-DWOLFSSL_IP_ALT_NAME -DDTLS_CID_MAX_SIZE=8"
 
 echo "==> build"
@@ -144,7 +178,7 @@ fi
 
 echo
 echo "wolfSSL instalado em ${PREFIX}"
-grep -E "define (WOLFSSL_DTLS13|WOLFSSL_IP_ALT_NAME|OPENSSL_EXTRA|HAVE_AESCCM|WOLFSSL_DTLS_CID|DTLS_CID_MAX_SIZE|WOLFSSL_SRTP)" \
+grep -E "define (WOLFSSL_DTLS13|WOLFSSL_IP_ALT_NAME|OPENSSL_EXTRA|HAVE_AESCCM|WOLFSSL_DTLS_CID|DTLS_CID_MAX_SIZE|WOLFSSL_SRTP|WOLFSSL_AESNI|USE_INTEL_SPEEDUP|WOLFSSL_HAVE_SP_ECC|WOLFSSL_SP_ASM|WOLFSSL_EARLY_DATA)" \
   "${PREFIX}/include/wolfssl/options.h" || true
 
 if [[ "${PREFIX}" != "/usr/local" ]]; then

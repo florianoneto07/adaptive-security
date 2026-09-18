@@ -57,6 +57,53 @@ Acrescentei também um `make distclean` antes do build: trocar de flags de
 `configure` sem limpar deixa objetos compilados sob as opções antigas, e o
 defeito aparece como símbolo ausente no link de outro projeto.
 
+**Acrescentei `--enable-intelasm`, `--enable-sp --enable-sp-asm` e
+`--enable-earlydata` (2026-09-18).** A biblioteca estava compilada sem AES-NI
+e com a curva P-256 em C genérico, embora a vCPU exponha `aes`, `pclmulqdq` e
+`avx2`. O efeito apareceu nos dados: o custo de CPU por bloco de 16 KiB do C4
+(seguro − claro sob netem) era +117 µs, e o `benchmark` do wolfCrypt na mesma
+build dava AES-256-GCM a 138 MiB/s — 16 KiB ÷ 138 MiB/s ≈ 118 µs. Ou seja, a
+coluna media a cifra em C puro, não o protocolo; e a CPU do handshake
+(3–4 ms no DTLS) era o ECDHE em software. **Todas as campanhas até
+`campaign-20260916T182845Z-606a0af`, inclusive, foram colhidas assim**; o
+artigo IEEE declara isso e não recolhe dados. A partir desta mudança, novas
+campanhas não são comparáveis às antigas em CPU (por mensagem e de handshake)
+— são comparáveis em tudo o mais (bytes, RTT, entrega e estabelecimento em
+tempo de parede dependem do enlace, não da cifra).
+
+`--enable-earlydata` prepara o modo 0-RTT do TLS 1.3 PSK para o periódico
+(TS 33.535 Anexo B). Não muda o comportamento dos binários atuais: o servidor
+só aceita early data se chamar `wolfSSL_CTX_set_max_early_data()` com valor
+maior que zero, e nenhum canal chama.
+
+`WOLFSSL_AESNI` muda o layout da `struct Aes` (`wolfssl/wolfcrypt/aes.h`), e
+o libcoap a aloca na pilha (`src/coap_wolfssl.c`, `Aes aes;`). O libcoap foi
+recompilado na sequência, e o `check_wolfssl.sh` passou a exigir
+`WOLFSSL_AESNI`, `USE_INTEL_SPEEDUP`, `WOLFSSL_HAVE_SP_ECC`, `WOLFSSL_SP_ASM`
+e `WOLFSSL_EARLY_DATA`, para que uma VM acelerada e outra não gerem campanhas
+incomparáveis em silêncio. As checagens de aceleração valem para x86-64; uma
+porta para ARM (fora de escopo) usaria `--enable-armasm`.
+
+Medido com `wolfcrypt/benchmark/benchmark` nesta VM (2 vCPU), antes e depois:
+
+| Primitiva | Antes (C puro) | Depois (intelasm + sp-asm) |
+|---|---|---|
+| AES-256-GCM enc | 138 MiB/s (15,9 ciclos/B) | **3940 MiB/s** (0,56 ciclos/B) |
+| AES-CCM enc | 166 MiB/s | 640 MiB/s |
+| SHA-384 | 384 MiB/s | 680 MiB/s |
+| HMAC-SHA384 | 383 MiB/s | 699 MiB/s |
+| ECDHE P-256 agree | 0,414 ms/op | **0,046 ms/op** |
+
+Validação depois da recompilação (wolfSSL → libcoap → `make clean && make`):
+`run.sh all` em loopback, 10 s, uma repetição — os quatro canais passaram.
+CPU do handshake (loopback): C1 3,6 → 0,72 ms, C3 2,9 → 0,82 ms, C4 1,3 →
+0,42 ms. CPU por bloco de 16 KiB do C4: ~142 µs (sob netem, antes) → 9,4 µs
+(loopback, depois).
+
+A árvore de build usada é `~/wolfssl-oscore` (`WOLFSSL_SRC`); `~/wolfssl`
+tem objetos de root de um `sudo make install` antigo e o próprio script a
+recusa.
+
 ### `scripts/setup_libcoap.sh`
 
 **Fixei o commit do libcoap** (`dbeedd59b`), pelo mesmo motivo. O script seguia

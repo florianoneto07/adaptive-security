@@ -52,6 +52,13 @@ need_define OPENSSL_ALL         "símbolos que o libcoap referencia (--enable-op
 need_define WOLFSSL_IP_ALT_NAME "comparação de subjectAltName iPAddress (-DWOLFSSL_IP_ALT_NAME)"
 need_define WOLFSSL_DTLS_CID    "Connection ID do DTLS 1.3, RFC 9146 (--enable-dtlscid)"
 need_absent NO_PSK              "PSK por canal em C1/C3/C4 (--enable-psk)"
+# Sem AES-NI a cifra roda em C puro e a CPU por mensagem mede a biblioteca, não
+# o protocolo; uma VM com AES-NI e outra sem dariam campanhas incomparáveis.
+need_define WOLFSSL_AESNI       "AES-NI para AES-GCM/CCM (--enable-intelasm)"
+need_define USE_INTEL_SPEEDUP   "SHA-2/ChaCha em AVX2 (--enable-intelasm)"
+need_define WOLFSSL_HAVE_SP_ECC "ECDHE P-256 em single precision (--enable-sp)"
+need_define WOLFSSL_SP_ASM      "single precision em assembly (--enable-sp-asm)"
+need_define WOLFSSL_EARLY_DATA  "0-RTT do TLS 1.3 PSK, periódico (--enable-earlydata)"
 
 if [[ "${#MISSING[@]}" -gt 0 ]]; then
   {

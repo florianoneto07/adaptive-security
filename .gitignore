@@ -26,3 +26,9 @@ dtls_client
 # Diversos
 *.log
 *.swp
+
+# Material de terceiros usado como referência (PDFs com direitos autorais)
+bench/
+
+# Bytecode do Python dos scripts de agregação
+__pycache__/

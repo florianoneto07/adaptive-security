@@ -1,0 +1,371 @@
+% Esqueleto do artigo IEEE (conferência, 5–6 páginas). Inglês no texto do
+% artigo; comentários em português para quem escreve.
+%
+% Compilar: ver README.md nesta pasta (Overleaf com o pacote svg, ou texlive
+% local + inkscape). Tabelas: geradas por scripts/paper_tables.py — não editar
+% os .tex em tables/ à mão. Figuras: scripts/plot_resultados.py --out figures.
+%
+% Convenção: "% TODO:" marca o que falta escrever; \todo{} aparece impresso
+% no rascunho e some com \usepackage[disable]{todonotes}.
+
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{svg}            % \includesvg: Overleaf converte com o inkscape
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{siunitx}
+\usepackage{xcolor}
+\usepackage[colorinlistoftodos,textsize=footnotesize]{todonotes}
+\usepackage{hyperref}
+
+\svgsetup{inkscapelatex=false}
+
+\begin{document}
+
+% TODO: título definitivo. Este é o título de trabalho.
+\title{Measuring the Cost of Fixed Security Profiles for UAV Application
+Classes: TLS~1.3, DTLS~1.3 and OSCORE as 3GPP AKMA Ua* Protocols under
+Emulated Links}
+
+% TODO: autores, afiliações, e-mail.
+\author{
+\IEEEauthorblockN{First Author}
+\IEEEauthorblockA{\textit{Department} \\
+\textit{University}\\
+City, Country \\
+email@domain}
+\and
+\IEEEauthorblockN{Second Author}
+\IEEEauthorblockA{\textit{Department} \\
+\textit{University}\\
+City, Country \\
+email@domain}
+}
+
+\maketitle
+
+% =====================================================================
+\begin{abstract}
+% Rascunho a partir das cinco observações da PRONTIDAO §2.4 e do P1.
+3GPP TS~33.535 defines Authentication and Key Management for Applications
+(AKMA) and recommends three protocols to protect the Ua* reference point
+between the User Equipment and an Application Function: TLS with pre-shared
+keys, DTLS~1.3 and OSCORE. Prior work has verified and measured only the TLS
+option, on a single host. This paper assigns each of the three normative
+profiles---plus DTLS-SRTP, a proposal outside TS~33.535---to a class of
+unmanned-aerial-vehicle (UAV) application (command and control, periodic
+telemetry, real-time media, bulk transfer), with one application key per
+class, and measures their cost on a two-machine testbed with symmetric link
+emulation. Across three link conditions, a delay sweep and a loss sweep, we
+report establishment time and bytes, per-message overhead, delay
+percentiles, delivery ratio, CPU and memory, always against an unprotected
+baseline carrying the same traffic. Establishment scales as an integer number
+of round trips fixed by the profile (1 for OSCORE, 2 for TLS~1.3, 3 for
+DTLS~1.3 with cookie); per-message overhead is constant and independent of
+the link (18--28~bytes); and, under 20\,\% loss, security costs
+establishment and bytes but not reliability---delivery of the secured channel
+is indistinguishable from that of the unprotected one. The testbed, raw data
+and figures are published for reproduction.
+% TODO: fechar em ~200 palavras; verificar se o venue limita o resumo.
+\end{abstract}
+
+\begin{IEEEkeywords}
+5G AKMA, Ua* protocol, TLS 1.3, DTLS 1.3, OSCORE, UAV, security overhead,
+testbed, link emulation
+\end{IEEEkeywords}
+
+% =====================================================================
+\section{Introduction}
+\label{sec:intro}
+
+% TODO: escrever. Pontos a cobrir, nesta ordem (≈ 3/4 de coluna):
+\begin{itemize}
+  \item UAV traffic is not one flow: 3GPP TS~22.125 (via Zeng et
+        al.~\cite{zeng2019}) sets distinct latency, rate and reliability
+        targets per class---command and control (50~ms, PER $10^{-3}$),
+        telemetry, real-time video, bulk data.
+  \item AKMA~\cite{ts33535} gives each application its own key
+        ($K_{AF}$) and leaves the choice of Ua* protocol open: TLS PSK
+        (Annex~B), DTLS~1.3 (Annex~C), OSCORE (Annex~D).
+  \item Ko et al.~\cite{ko2024} formally verified and measured only the TLS
+        option, with client and server on the same virtual machine and
+        system-wide CPU/memory counters.
+  \item Gap: no measurement of the three normative profiles side by side,
+        on a real link, against an unprotected baseline, for UAV classes.
+  \item Contributions: (i) a fixed profile per class, justified from the
+        standards; (ii) an open two-VM testbed with symmetric link emulation
+        and per-process instrumentation; (iii) results under three
+        conditions and two sweeps, with the cost of security isolated.
+  \item Scope statement (explicit): profiles are fixed at design time;
+        adaptive selection, AKMA key derivation and hardware are out of
+        scope; $K_{AF}$ is emulated as an injected per-application PSK.
+\end{itemize}
+\todo[inline]{Intro: 5 parágrafos. Fechar com a organização do artigo.}
+
+% =====================================================================
+\section{Background and Profile Assignment}
+\label{sec:profiles}
+
+\subsection{AKMA and the Ua* Protocols}
+% TODO: 1 parágrafo — K_AUSF → K_AKMA → K_AF; A-KID; Ua* entre UE e AF;
+% TS 33.535 R18: Anexo B (TLS 1.2/1.3 PSK, identidade "3GPP-AKMA"+A-KID,
+% PSK externa derivada de K_AF), Anexo C (DTLS 1.3, mesmos procedimentos),
+% Anexo D (OSCORE: OMS = HKDF(K_AF, "AKMA-OSCORE")).
+
+\subsection{UAV Application Classes}
+% TODO: 1 parágrafo com os requisitos por classe e as fontes
+% (Zeng et al. Tab. I; Fotouhi et al. Tab. 1; Gündoğan; Wu).
+
+\subsection{One Fixed Profile per Class}
+% Fonte: README "Por que cada perfil foi atribuído àquela classe".
+Table~\ref{tab:profiles} lists the assignment. C1 requires UDP (retransmitted
+control messages arrive stale) and forward secrecy: DTLS~1.3 with
+\texttt{psk\_dhe\_ke}, 11-byte record header, Connection~ID available for
+mobility~\cite{rfc9147,rfc9146}. C2 is small, periodic and may cross a proxy
+or UTM system: OSCORE~\cite{rfc8613} keeps end-to-end protection through
+intermediaries, which (D)TLS cannot. C3 is RTP media: DTLS only derives keys
+through \texttt{use\_srtp}~\cite{rfc5764}; SRTP protects the packets. C4 is
+deferred bulk transfer where ordering and reliability matter more than
+latency: TLS~1.3 over TCP~\cite{rfc8446}. Each channel has its own 32-byte
+PSK, emulating AKMA's per-application $K_{AF}$; no channel can reach another
+channel's key.
+
+\begin{table}[t]
+\centering
+\caption{Fixed security profile per UAV application class.}
+\label{tab:profiles}
+\begin{tabular}{llllc}
+\toprule
+ID & Class & Profile & Transport & TS~33.535 \\
+\midrule
+C1 & Command \& control & DTLS 1.3 PSK & UDP & Annex C \\
+C2 & Periodic telemetry & OSCORE over CoAP & UDP & Annex D \\
+C3 & Real-time media & DTLS 1.3 + SRTP & UDP & --$^{\ast}$ \\
+C4 & Mission, firmware, logs & TLS 1.3 PSK & TCP & Annex B \\
+\bottomrule
+\end{tabular}
+\begin{flushleft}\footnotesize
+$^{\ast}$Authors' proposal; not one of the Ua* profiles of TS~33.535.
+\end{flushleft}
+\end{table}
+
+% =====================================================================
+\section{Testbed and Method}
+\label{sec:method}
+
+% TODO: Figura 1 — duas VMs, netem nas duas pontas, quatro canais, AAnF
+% ausente (K_AF injetada). Ainda não existe; desenhar (draw.io/TikZ).
+\begin{figure}[t]
+\centering
+\todo[inline]{Fig.~1: testbed diagram (two VMs, netem at both ends, four
+channel pairs, per-channel PSK emulating $K_{AF}$).}
+\caption{Testbed: UAV (client VM) and ground station (server VM), each with
+its own netem instance, one independent client/server pair per channel.}
+\label{fig:testbed}
+\end{figure}
+
+\subsection{Platform}
+% Fonte: README, REPORT. Declarar VM, sem AES-NI nas campanhas deste artigo.
+Two Ubuntu~26.04 virtual machines (2~vCPU, 5.2~GB) on the same /24 subnet,
+as shown in Fig.~\ref{fig:testbed}.
+All channels are C programs over wolfSSL~5.9.2 (fixed commit; TLS~1.3,
+DTLS~1.3, PSK, \texttt{use\_srtp}, AES-CCM) and libcoap (fixed commit, OSCORE
+over the same wolfSSL); media uses libsrtp2~2.7. Cipher suite
+\texttt{TLS\_AES\_256\_GCM\_SHA384} on C1/C3/C4, \texttt{SRTP\_AEAD\_AES\_256\_GCM}
+on C3, AES-CCM-16-64-128 on C2. \textbf{The wolfSSL build used for all
+campaigns in this paper had no hardware acceleration} (AES-256-GCM at
+138~MiB/s, ECDHE P-256 at 0.41~ms); CPU figures must be read as software
+cost on this platform.
+\todo[inline]{Confirmar a versão do libcoap e do kernel a partir do
+manifest.json da campanha principal.}
+
+\subsection{Traffic Generators}
+% Fonte: README "Parâmetros dos geradores" (literatura vs. padrão do testbed).
+C1: 128-byte messages at 64~Hz ($\approx$65.5~kb/s, within the 60--100~kb/s
+band of~\cite{zeng2019}), request/response. C2: a 2-byte reading every
+$2\pm0.5$~s as a confirmable CoAP request~\cite{gundogan2020}. C3: 1200-byte
+RTP payloads at 4~Mb/s, one-way~\cite{wu2018}. C4: a 32~MiB transfer in
+16~KiB blocks (8~MiB and 1~MiB in the sweeps). Parameters not taken from the
+literature are testbed defaults and are listed as such.
+% TODO: Tabela II (parâmetros) se couber; senão, manter em texto.
+
+\subsection{Link Conditions}
+% Fonte: netem.sh, PRONTIDAO §2.1 e §10.
+netem is applied at \emph{both} VMs, so one-way delay is symmetric and
+RTT~$=2\times$~delay. Three base conditions: \emph{clean} (no emulation),
+\emph{3GPP~C2} (50~ms, 0.1\,\% loss) and \emph{handover} (200$\pm$20~ms,
+20\,\% loss with 25\,\% correlation). Two sweeps: loss $\in\{0, 0.1, 1, 5,
+10, 20\}$\,\% at 50~ms, and delay $\in\{0, 25, 50, 100, 200\}$~ms at
+0.1\,\%. Ten repetitions of 60~s per cell in the base conditions, five in the
+sweeps.
+
+\subsection{Instrumentation and Statistics}
+% Fonte: README "Como ler os CSVs"; PRONTIDAO §3.3 e ANALISE §3.4.
+Each process logs one event per handshake, message, reply and loss, with
+wall-clock and process CPU time (\texttt{CLOCK\_PROCESS\_CPUTIME\_ID}),
+bytes on the wire from the socket layer, and peak resident memory
+(\texttt{VmHWM}). Packet captures cross-check the counters (0.036\,\%
+difference on 6.5~MB) and are the only source of wire bytes for OSCORE,
+whose library exposes none. We report the median across repetitions with the
+inter-quartile range; latency has a long tail and a mean would be moved by a
+single scheduler stall. Per-message CPU is reported only as the difference
+between the secured channel and its unprotected baseline under emulated
+links: without link delay the reply is processed inside the timed window and
+the baseline measures \emph{more} CPU than the secured channel.
+% TODO: uma frase sobre reprodutibilidade — manifesto com commit, versões,
+% netem efetivo e fingerprints; campaign.sh recusa se as VMs divergirem.
+
+\subsection{Unprotected Baselines}
+For every class a \emph{plain} pair carries the same traffic without
+protection (UDP, CoAP, RTP, TCP). The difference to the secured pair, under
+the same condition, is the cost of the profile.
+
+% =====================================================================
+\section{Results}
+\label{sec:results}
+
+\input{tables/tab_results}
+
+\subsection{Establishment Scales in Round Trips}
+% Fonte: PRONTIDAO §10.1; Fig. 1 (fig1-estabelecimento-rtt).
+Fig.~\ref{fig:rtt} and Table~\ref{tab:delay} show establishment time against
+one-way delay. The slope identifies the profile: OSCORE's first exchange
+costs 1~RTT (the Echo challenge), TLS~1.3 over TCP 2~RTT (SYN plus the 1-RTT
+handshake) and DTLS~1.3 with the stateless cookie 3~RTT; the intercept is
+2--14~ms of processing. Under \emph{handover} DTLS~1.3 rises to 3.8~s
+(IQR~1.6~s) and its establishment bytes from 4\,588 to 7\,474, both from
+handshake retransmissions.
+
+\begin{figure}[t]
+\centering
+\includesvg[width=\columnwidth]{figures/fig1-establishment-rtt}
+\caption{Establishment time vs.\ one-way delay (median of 5 repetitions).
+The slope, in RTTs, is fixed by the profile.}
+\label{fig:rtt}
+\end{figure}
+
+\input{tables/tab_delay}
+
+\subsection{Per-Message Overhead Is Constant}
+% Fonte: PRONTIDAO §2.4 item 2, §10.3.
+22~bytes per record for DTLS and TLS (header, inner content type, 16-byte
+tag), 28 for SRTP (12-byte RTP header plus tag) and 18 for OSCORE
+(CoAP+OSCORE around a 2-byte reading), identical across the three
+conditions. Against the baselines the cost is +22, +16 and +11~bytes
+respectively; OSCORE is the cheapest per message but requires a 46-byte
+request that the unidirectional channels do not have.
+
+\subsection{Delivery Separates the Profiles under Loss}
+% Fonte: PRONTIDAO §2.4 item 3, §10.2; Fig. 2 e 3.
+DTLS and SRTP do not retransmit application data: their delivery follows the
+loss (100\,\% $\rightarrow$ 80\,\% at 20\,\%), as Fig.~\ref{fig:loss} shows.
+CoAP/OSCORE and TCP stay at 100\,\% and pay for it in time, not in loss
+(Fig.~\ref{fig:price}). The distinction matters for a control channel: for
+OSCORE the \emph{typical} reading is unaffected---$p_{50}$ stays at 102~ms,
+the RTT, at every loss level---while $p_{95}$ grows from 103~ms to 30.6~s, so
+the cost falls entirely on the tail. For TCP the whole transfer degrades:
+throughput drops from 40.1 to 0.017~Mb/s. At
+20\,\% \emph{independent} loss the DTLS handshake failed in 3 of 5 (C1) and
+2 of 5 (C3) repetitions within its 1--8~s retransmission budget, while under
+\emph{handover} (20\,\% \emph{bursty}) it completed 10 of 10: bursts leave
+clean windows.
+
+\begin{figure}[t]
+\centering
+\includesvg[width=\columnwidth]{figures/fig2-delivery-loss}
+\caption{Delivery ratio vs.\ independent packet loss at 50~ms one-way delay.
+DTLS and SRTP do not retransmit application data, so their delivery tracks
+the loss; OSCORE and TLS stay at 100\,\% at every point.}
+\label{fig:loss}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includesvg[width=\columnwidth]{figures/fig3-price-of-delivery}
+\caption{What the two retransmitting profiles pay for that 100\,\% delivery.
+(a)~OSCORE: the typical delay is unchanged (\SI{102}{\milli\second}, the RTT)
+while the tail grows to \SI{30.6}{\second}; (b)~TLS~1.3 over TCP: throughput
+falls four orders of magnitude.}
+\label{fig:price}
+\end{figure}
+
+\input{tables/tab_loss}
+
+\subsection{The Cost of Security}
+% Fonte: ANALISE §3.4, PRONTIDAO §10.3; Fig. 4.
+Table~\ref{tab:cost} and Fig.~\ref{fig:cost} compare each secured channel
+with its baseline. Security costs establishment (0 $\rightarrow$ 3--9~ms on a
+clean link; seconds under \emph{handover}) and bytes, not reliability:
+delivery is indistinguishable in every condition. Handshake CPU is stable
+across conditions (DTLS 3.1--3.8~ms, TLS 1.5--1.7~ms, OSCORE 0.3--0.4~ms).
+Per-message CPU under emulated links is +9--11~$\mu$s for DTLS (128~B),
++3--10~$\mu$s for SRTP (1200~B), +117~$\mu$s for TLS (16~KiB blocks, i.e.\
+software AES-GCM at 138~MiB/s) and +241--246~$\mu$s for OSCORE (protect and
+verify, CBOR/COSE processing). Resident memory grows by 1.2~MB (wolfSSL),
+4.1~MB (wolfSSL + libsrtp2) and 0.14~MB (libcoap in both) respectively.
+
+\input{tables/tab_security_cost}
+
+\begin{figure}[t]
+\centering
+\includesvg[width=\columnwidth]{figures/fig4-overhead-bytes}
+\caption{Cost of security per channel: secured vs.\ unprotected baseline.}
+\label{fig:cost}
+\end{figure}
+
+% =====================================================================
+\section{Related Work}
+\label{sec:related}
+
+% TODO: meia coluna. Fonte: PRONTIDAO §5 e ANALISE §1.
+\begin{itemize}
+  \item Ko et al.~\cite{ko2024}: AKMA with the three TLS~1.3 PSK modes,
+        ProVerif, one VM, system-wide CPU/memory. Only TLS.
+  \item Restuccia et al.~\cite{restuccia2020}: (D)TLS~1.2 vs.\ 1.3, PSK vs.\
+        ECDHE on microcontrollers; energy and memory, no link conditions.
+  \item Gunnarsson et al.~\cite{gunnarsson2021}: OSCORE vs.\ DTLS~1.2 on
+        constrained devices; overhead, memory, RTT.
+  \item G\"{u}ndo\u{g}an et al.~\cite{gundogan2020}: OSCORE/DTLS/NDN on a
+        real radio testbed; completion-time CDFs.
+  \item Vu\v{c}ini\'{c} et al.~\cite{vucinic2015}: DTLS handshake vs.\ PDR
+        sweep with confidence intervals.
+  \item Chaari et al.~\cite{chaari2020}: DTLS over MAVLink for UAV--GCS;
+        concludes ``negligible effect'' without sweeping the link.
+  \item Position: first side-by-side measurement of the three normative
+        Ua* profiles on a real link, against unprotected baselines, for UAV
+        classes.
+\end{itemize}
+
+% =====================================================================
+\section{Limitations}
+\label{sec:limits}
+% Fonte: README "Limitações conhecidas", PRONTIDAO §3.
+Virtual machines (no energy, no microcontroller memory); unsynchronised
+clocks (C3 reported as relative percentiles); synthetic traffic (no MAVLink
+parsing, no codec); one peer per server; static OSCORE context (RFC~8613
+Appendix~B.1.2 disabled); $K_{AF}$ injected, not derived; software
+cryptography.
+
+% =====================================================================
+\section{Conclusion and Future Work}
+\label{sec:conclusion}
+% TODO: 2 parágrafos. Trabalho futuro = o periódico: verificação formal em
+% ProVerif dos três Ua*, derivação de K_AF e identidade 3GPP-AKMA, Anexo D
+% no C2, modos PSK-only e 0-RTT, mídia sobre DTLS 1.3 normativo, CID no
+% handover, hardware.
+\todo[inline]{Conclusão.}
+
+% =====================================================================
+\section*{Reproducibility}
+% TODO: URL do repositório, tag da versão dos dados.
+Source code, campaign orchestration, raw CSVs, manifests and figure
+generators are available at \url{https://github.com/REPO}.
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}

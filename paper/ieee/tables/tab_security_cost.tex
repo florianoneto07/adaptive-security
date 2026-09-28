@@ -1,0 +1,29 @@
+% Gerado por scripts/paper_tables.py — não editar à mão.
+\begin{table*}[t]
+\centering
+\caption{Cost of security: each secured channel against its unprotected baseline (same traffic, same condition). Per-message CPU is reported as the secured$-$plain difference and only under emulated links (see Sec.~\ref{sec:method}).}
+\label{tab:cost}
+\begin{tabular}{llrrrrrrr}
+\toprule
+Cond. & Channel & Estab. [ms] & Estab. CPU [ms] & Overhead sec./plain [B/msg] & CPU/msg sec.$-$plain [$\mu$s] & Delivery sec./plain [\%] & RSS sec./plain [MB] \\
+\midrule
+clean & C1 DTLS 1.3 & 8.8 & 3.26 & 22.0/0 & n/a$^{\ddagger}$ & 100.0/100.0 & 4.2/3.0 \\
+clean & C2 OSCORE & 1.1 & 0.44 & 18/7$^{\dagger}$ & n/a$^{\ddagger}$ & 100.0/100.0 & 4.2/4.0 \\
+clean & C3 DTLS-SRTP & 6.9 & 3.38 & 28.0/12 & n/a$^{\ddagger}$ & 100.0/100.0 & 6.9/2.9 \\
+clean & C4 TLS 1.3 & 3.3 & 1.65 & 22.0/0 & n/a$^{\ddagger}$ & 100.0/100.0 & 4.1/2.9 \\
+\midrule
+3GPP C2 & C1 DTLS 1.3 & 308.6 & 3.14 & 22.0/0 & +11 & 99.9/99.9 & 4.2/3.0 \\
+3GPP C2 & C2 OSCORE & 101.6 & 0.30 & 18/7$^{\dagger}$ & +246 & 100.0/100.0 & 4.1/4.0 \\
+3GPP C2 & C3 DTLS-SRTP & 308.7 & 3.16 & 28.0/12 & +3 & 99.9/99.9 & 6.9/2.9 \\
+3GPP C2 & C4 TLS 1.3 & 203.7 & 1.52 & 22.0/0 & +117 & 100.0/100.0 & 4.2/2.9 \\
+\midrule
+handover & C1 DTLS 1.3 & 3754.3 & 3.74 & 22.0/0 & +9 & 89.7/90.0 & 4.2/3.0 \\
+handover & C2 OSCORE & 413.9 & 0.32 & 18/7$^{\dagger}$ & +241 & 100.0/100.0 & 4.1/4.0 \\
+handover & C3 DTLS-SRTP & 4210.5 & 3.84 & 28.0/12 & +10 & 89.8/90.0 & 6.9/2.9 \\
+handover & C4 TLS 1.3 & 823.3 & 1.52 & 22.0/0 & +117 & 100.0/100.0 & 4.1/2.9 \\
+\bottomrule
+\end{tabular}
+\begin{flushleft}\footnotesize
+$^{\dagger}$C2 from packet capture: response overhead over the 2-byte payload, CoAP+OSCORE vs.\ plain CoAP. $^{\ddagger}$Not reported under \emph{clean}: without link delay the reply is processed inside the timed window and the plain channel measures \emph{more} CPU than the secured one, so the difference is not a cipher cost.
+\end{flushleft}
+\end{table*}

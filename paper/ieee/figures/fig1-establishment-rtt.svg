@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="400" viewBox="0 0 700 400" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+<rect width="700" height="400" fill="#fcfcfb"/>
+<text x="24" y="20" font-size="14" font-weight="600" fill="#0b0b0b">Establishment grows with RTT, and the slope identifies the profile</text>
+<text x="24" y="36" font-size="11.5" fill="#52514e">Median of 5 repetitions. netem runs at both ends, so RTT = 2 x delay.</text>
+<line x1="68" y1="346.0" x2="500" y2="346.0" stroke="#e6e5e1" stroke-width="1"/>
+<text x="59" y="350.0" font-size="11" text-anchor="end" fill="#52514e">0</text>
+<line x1="68" y1="304.6" x2="500" y2="304.6" stroke="#e6e5e1" stroke-width="1"/>
+<text x="59" y="308.6" font-size="11" text-anchor="end" fill="#52514e">200</text>
+<line x1="68" y1="263.1" x2="500" y2="263.1" stroke="#e6e5e1" stroke-width="1"/>
+<text x="59" y="267.1" font-size="11" text-anchor="end" fill="#52514e">400</text>
+<line x1="68" y1="221.7" x2="500" y2="221.7" stroke="#e6e5e1" stroke-width="1"/>
+<text x="59" y="225.7" font-size="11" text-anchor="end" fill="#52514e">600</text>
+<line x1="68" y1="180.3" x2="500" y2="180.3" stroke="#e6e5e1" stroke-width="1"/>
+<text x="59" y="184.3" font-size="11" text-anchor="end" fill="#52514e">800</text>
+<line x1="68" y1="138.9" x2="500" y2="138.9" stroke="#e6e5e1" stroke-width="1"/>
+<text x="59" y="142.9" font-size="11" text-anchor="end" fill="#52514e">1000</text>
+<line x1="68" y1="97.4" x2="500" y2="97.4" stroke="#e6e5e1" stroke-width="1"/>
+<text x="59" y="101.4" font-size="11" text-anchor="end" fill="#52514e">1200</text>
+<line x1="68" y1="56.0" x2="500" y2="56.0" stroke="#e6e5e1" stroke-width="1"/>
+<text x="59" y="60.0" font-size="11" text-anchor="end" fill="#52514e">1400</text>
+<line x1="68" y1="56" x2="68" y2="346" stroke="#b8b7b2" stroke-width="1"/>
+<line x1="68" y1="346" x2="500" y2="346" stroke="#b8b7b2" stroke-width="1"/>
+<text x="68.0" y="364" font-size="11" text-anchor="middle" fill="#52514e">0</text>
+<text x="122.0" y="364" font-size="11" text-anchor="middle" fill="#52514e">50</text>
+<text x="176.0" y="364" font-size="11" text-anchor="middle" fill="#52514e">100</text>
+<text x="284.0" y="364" font-size="11" text-anchor="middle" fill="#52514e">200</text>
+<text x="500.0" y="364" font-size="11" text-anchor="middle" fill="#52514e">400</text>
+<text x="284.0" y="386" font-size="11.5" text-anchor="middle" fill="#52514e">Link RTT (ms)</text>
+<text x="16" y="201.0" font-size="11.5" fill="#52514e" text-anchor="middle" transform="rotate(-90 16 201.0)">Establishment (ms)</text>
+<path d="M68.0 343.3 L122.0 312.2 L176.0 281.1 L284.0 219.0 L500.0 94.7" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="68.0" cy="343.3" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="122.0" cy="312.2" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="176.0" cy="281.1" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="284.0" cy="219.0" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="500.0" cy="94.7" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<path d="M68.0 344.7 L122.0 324.1 L176.0 303.4 L284.0 261.9 L500.0 179.1" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round" stroke-dasharray="7 4"/>
+<rect x="64.0" y="340.7" width="8.1" height="8.1" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="118.0" y="320.1" width="8.1" height="8.1" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="171.9" y="299.4" width="8.1" height="8.1" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="279.9" y="257.9" width="8.1" height="8.1" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="495.9" y="175.1" width="8.1" height="8.1" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<path d="M68.0 345.6 L122.0 335.1 L176.0 324.8 L284.0 304.0 L500.0 262.6" fill="none" stroke="#1baf7a" stroke-width="2" stroke-linejoin="round" stroke-dasharray="2 3"/>
+<polygon points="68.0,339.4 62.8,349.7 73.2,349.7" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2"/>
+<polygon points="122.0,328.9 116.8,339.3 127.2,339.3" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2"/>
+<polygon points="176.0,318.6 170.8,329.0 181.2,329.0" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2"/>
+<polygon points="284.0,297.8 278.8,308.2 289.2,308.2" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2"/>
+<polygon points="500.0,256.4 494.8,266.8 505.2,266.8" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2"/>
+<line x1="518" y1="62" x2="540" y2="62" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="529.0" cy="62.0" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<text x="548" y="66" font-size="11" fill="#0b0b0b">DTLS 1.3 (C1, C3) · 3 RTT</text>
+<line x1="518" y1="81" x2="540" y2="81" stroke="#eb6834" stroke-width="2" stroke-dasharray="7 4"/>
+<rect x="525.0" y="77.0" width="8.1" height="8.1" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<text x="548" y="85" font-size="11" fill="#0b0b0b">TLS 1.3/TCP (C4) · 2 RTT</text>
+<line x1="518" y1="100" x2="540" y2="100" stroke="#1baf7a" stroke-width="2" stroke-dasharray="2 3"/>
+<polygon points="529.0,93.8 523.8,104.1 534.2,104.1" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2"/>
+<text x="548" y="104" font-size="11" fill="#0b0b0b">OSCORE (C2) · 1 RTT</text>
+</svg>

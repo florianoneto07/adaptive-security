@@ -1,0 +1,20 @@
+% Gerado por scripts/paper_tables.py — não editar à mão.
+\begin{table}[t]
+\centering
+\caption{Establishment time [ms] vs.\ one-way delay (median of 5 repetitions; loss fixed at 0.1\,\%; RTT $= 2\times$ delay).}
+\label{tab:delay}
+\begin{tabular}{rrrrrr}
+\toprule
+Delay & RTT & C1 DTLS 1.3 & C2 OSCORE & C3 DTLS-SRTP & C4 TLS 1.3 \\
+[ms] & [ms] &  &  &  &  \\
+\midrule
+0 & 0 & 13.6 & 2.0 & 12.5 & 6.3 \\
+25 & 50 & 163.0 & 52.6 & 163.0 & 105.6 \\
+50 & 100 & 313.3 & 102.2 & 312.9 & 205.5 \\
+100 & 200 & 613.3 & 202.5 & 613.2 & 405.9 \\
+200 & 400 & 1213.1 & 402.4 & 1212.8 & 805.7 \\
+\midrule
+\multicolumn{2}{l}{Slope [RTT]} & 3 & 1 & 3 & 2 \\
+\bottomrule
+\end{tabular}
+\end{table}

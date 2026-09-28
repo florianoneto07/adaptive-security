@@ -1,0 +1,19 @@
+% Gerado por scripts/paper_tables.py — não editar à mão.
+\begin{table}[t]
+\centering
+\caption{Degradation vs.\ independent packet loss at 50\,ms one-way delay (median of 5 repetitions). Failed = repetitions whose handshake never completed.}
+\label{tab:loss}
+\begin{tabular}{rrrrrrr}
+\toprule
+Loss & C1 estab. & C1 deliv. & C3 deliv. & C2 $p_{95}$ & C4 thr. & Failed \\
+[\%] & [ms] & [\%] & [\%] & [ms] & [Mb/s] & C1/C3 \\
+\midrule
+0 & 313 & 100.0 & 99.9 & 103 & 40.1 & 0/0 \\
+0.1 & 314 & 99.9 & 99.9 & 103 & 43.6 & 0/0 \\
+1 & 313 & 99.1 & 99.0 & 103 & 2.2 & 0/0 \\
+5 & 313 & 95.0 & 95.0 & 2\,978 & 0.700 & 0/0 \\
+10 & 1\,703 & 89.5 & 90.0 & 6\,853 & 0.293 & 0/0 \\
+20 & 4\,537 & 80.5 & 79.9 & 30\,569 & 0.017 & 3/2 \\
+\bottomrule
+\end{tabular}
+\end{table}

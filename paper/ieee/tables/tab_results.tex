@@ -1,0 +1,29 @@
+% Gerado por scripts/paper_tables.py — não editar à mão.
+\begin{table*}[t]
+\centering
+\caption{Measured cost of each fixed profile under the three link conditions (median of 10 repetitions; IQR across repetitions in parentheses where informative).}
+\label{tab:results}
+\begin{tabular}{llrrrrrrrrr}
+\toprule
+Cond. & Channel & Estab. [ms] & Estab. [B] & Overhead [B/msg] & $p_{50}$ [ms] & $p_{95}$ [ms] & $p_{99}$ [ms] & Delivery [\%] & Thr. [Mb/s] & RSS [MB] \\
+\midrule
+clean & C1 DTLS 1.3 & 8.8 (3.1) & 4\,588 & 22.0 & 0.8 & 0.9 & 1.3 & 100.0 & -- & 4.2 \\
+clean & C2 OSCORE & 1.1 (0.1) & 57/46$^{\dagger}$ & 18$^{\dagger}$ & 1.1 & 1.4 & 1.6 & 100.0 & -- & 4.2 \\
+clean & C3 DTLS-SRTP & 6.9 & 4\,611 & 28.0 & 0.0$^{\ddagger}$ & 0.0$^{\ddagger}$ & 0.0$^{\ddagger}$ & 100.0 & -- & 6.9 \\
+clean & C4 TLS 1.3 & 3.3 & 2\,941 & 22.0 & 579$^{\S}$ & -- & -- & 100.0 & 460.6 & 4.1 \\
+\midrule
+3GPP C2 & C1 DTLS 1.3 & 308.6 & 4\,588 & 22.0 & 101.2 & 101.3 & 101.5 & 99.9 & -- & 4.2 \\
+3GPP C2 & C2 OSCORE & 101.6 & 57/46$^{\dagger}$ & 18$^{\dagger}$ & 101.6 & 101.8 & 102.0 & 100.0 & -- & 4.1 \\
+3GPP C2 & C3 DTLS-SRTP & 308.7 & 4\,611 & 28.0 & 0.0$^{\ddagger}$ & 0.0$^{\ddagger}$ & 0.0$^{\ddagger}$ & 99.9 & -- & 6.9 \\
+3GPP C2 & C4 TLS 1.3 & 203.7 & 2\,941 & 22.0 & 2\,148$^{\S}$ & -- & -- & 100.0 & 109.5 & 4.2 \\
+\midrule
+handover & C1 DTLS 1.3 & 3754.3 (1563.2) & 7\,474 & 22.0 & 401.2 & 428.8 & 436.2 & 89.7 & -- & 4.2 \\
+handover & C2 OSCORE & 413.9 (1921.7) & 57/46$^{\dagger}$ & 18$^{\dagger}$ & 405.0 & 3232.4 & 6826.5 & 100.0 & -- & 4.1 \\
+handover & C3 DTLS-SRTP & 4210.5 (1832.6) & 6\,652 & 28.0 & 62.6$^{\ddagger}$ & 80.7$^{\ddagger}$ & 83.1$^{\ddagger}$ & 89.8 & -- & 6.9 \\
+handover & C4 TLS 1.3 & 823.3 (1007.9) & 2\,941 & 22.0 & 2\,123\,008$^{\S}$ & -- & -- & 100.0 & 0.126 & 4.1 \\
+\bottomrule
+\end{tabular}
+\begin{flushleft}\footnotesize
+$^{\dagger}$C2 bytes from packet capture (request/response, IP and above); the response carries the 2-byte reading in 18 bytes of CoAP+OSCORE. $^{\ddagger}$C3 is one-way, measured relative to the stream floor without a common clock: only differences between percentiles are meaningful. $^{\S}$C4: completion time of the whole 32~MiB transfer, one sample per repetition.
+\end{flushleft}
+\end{table*}

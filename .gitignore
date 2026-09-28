@@ -13,6 +13,11 @@ keys/*
 # Resultados de execução: CSVs, manifestos e capturas
 results/*
 !results/.gitkeep
+# Exceção: o compilado das campanhas é material do artigo, não dado bruto.
+# São 25 kB gerados por scripts/planilha_resultados.py a partir dos resumo.csv,
+# e é o que sobrevive quando os diretórios de campanha (centenas de MB) não
+# vão para o repositório.
+!results/resultados-compilados.xlsx
 
 # Artefatos de compilação
 build/

@@ -45,6 +45,66 @@ W, H = 700, 400
 PAD_L, PAD_R, PAD_T, PAD_B = 68, 200, 34, 54
 
 
+# Idioma dos rótulos. O artigo IEEE é em inglês; o REPORT e a PRONTIDAO, em
+# português. As figuras são as MESMAS, só os rótulos mudam — nunca regerar um
+# conjunto com dados diferentes do outro.
+L = {
+    "pt": {
+        "f1_t": "Estabelecimento cresce com o RTT, e a inclinação identifica o perfil",
+        "f1_s": "Mediana de 5 repetições. O netem age nos dois sentidos, então RTT = 2 x atraso.",
+        "f1_y": "Estabelecimento (ms)", "f1_x": "RTT do enlace (ms)",
+        "f1_a": "DTLS 1.3 (C1, C3) · 3 RTT", "f1_b": "TLS 1.3/TCP (C4) · 2 RTT",
+        "f1_c": "OSCORE (C2) · 1 RTT",
+        "f2_t": "Só os perfis que retransmitem seguram a entrega",
+        "f2_s": "Mediana de 5 repetições. C2 e C4 ficam em 100% em todos os pontos.",
+        "f2_y": "Entrega (%)", "f2_x": "Perda no enlace (%), cada sentido",
+        "f2_a": "DTLS 1.3 (C1)", "f2_b": "DTLS-SRTP (C3)", "f2_c": "OSCORE e TLS (C2, C4)",
+        "f3_t": "Entrega de 100% se paga em tempo, não em perda",
+        "f3_s": "Os dois perfis que retransmitem, sob a mesma varredura. Eixos logarítmicos.",
+        "f3_pa": "(a) OSCORE sobre CoAP (C2): o atraso típico não muda; a cauda explode",
+        "f3_pb": "(b) TLS 1.3 sobre TCP (C4): a vazão cai quatro ordens de grandeza",
+        "f3_ya": "Atraso (ms, log)", "f3_yb": "Vazão (Mbps, log)",
+        "f3_x": "Perda no enlace (%), cada sentido",
+        "f3_a": "p95 (cauda)", "f3_b": "p50 (típico)",
+        "f4_t": "O que cada perfil acrescenta a cada mensagem",
+        "f4_s": "Diferença entre o canal seguro e seu baseline em claro. Constante nas três condições.",
+        "f4_y": "Bytes acrescentados por mensagem",
+        "f4_n": "C2 medido no pcap (requisição 46->57 B, resposta 35->46 B); os demais pelos contadores de fio.",
+        "f4_l": ["C1\nDTLS 1.3", "C2\nOSCORE", "C3\nSRTP", "C4\nTLS 1.3"],
+        "dec": ",",
+    },
+    "en": {
+        "f1_t": "Establishment grows with RTT, and the slope identifies the profile",
+        "f1_s": "Median of 5 repetitions. netem runs at both ends, so RTT = 2 x delay.",
+        "f1_y": "Establishment (ms)", "f1_x": "Link RTT (ms)",
+        "f1_a": "DTLS 1.3 (C1, C3) · 3 RTT", "f1_b": "TLS 1.3/TCP (C4) · 2 RTT",
+        "f1_c": "OSCORE (C2) · 1 RTT",
+        "f2_t": "Only the profiles that retransmit hold delivery up",
+        "f2_s": "Median of 5 repetitions. C2 and C4 stay at 100% at every point.",
+        "f2_y": "Delivery (%)", "f2_x": "Link loss (%), each direction",
+        "f2_a": "DTLS 1.3 (C1)", "f2_b": "DTLS-SRTP (C3)", "f2_c": "OSCORE and TLS (C2, C4)",
+        "f3_t": "100% delivery is paid for in time, not in loss",
+        "f3_s": "The two retransmitting profiles, same sweep. Logarithmic axes.",
+        "f3_pa": "(a) OSCORE over CoAP (C2): typical delay is flat; the tail explodes",
+        "f3_pb": "(b) TLS 1.3 over TCP (C4): throughput falls four orders of magnitude",
+        "f3_ya": "Delay (ms, log)", "f3_yb": "Throughput (Mb/s, log)",
+        "f3_x": "Link loss (%), each direction",
+        "f3_a": "p95 (tail)", "f3_b": "p50 (typical)",
+        "f4_t": "What each profile adds to every message",
+        "f4_s": "Secured channel minus its unprotected baseline. Constant across the three conditions.",
+        "f4_y": "Bytes added per message",
+        "f4_n": "C2 from packet capture (request 46->57 B, response 35->46 B); the others from wire counters.",
+        "f4_l": ["C1\nDTLS 1.3", "C2\nOSCORE", "C3\nSRTP", "C4\nTLS 1.3"],
+        "dec": ".",
+    },
+}
+
+
+def dec(txt, lang):
+    """Separador decimal do idioma. SVG não tem locale; o número é texto."""
+    return txt.replace(".", L[lang]["dec"])
+
+
 def esc(s):
     return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
@@ -123,11 +183,26 @@ def legend(parts, names, x, y):
 
 
 def line_chart(path, title, subtitle, xlabels, series, ylab, xlab,
-               ymax=None, ymin=0, yticks_n=5, yfmt=lambda v: f"{v:g}"):
+               ymax=None, ymin=0, yticks_n=5, yfmt=lambda v: f"{v:g}",
+               xvals=None):
+    """
+    xvals=None deixa o eixo x ORDINAL (espaçamento igual entre rótulos), que é
+    o certo quando os pontos não são uma escala — a varredura de perda tem 0 e
+    0,1%, que num eixo linear colariam e num log não existiriam.
+
+    Com xvals, o eixo é LINEAR no valor. É obrigatório quando a figura afirma
+    algo sobre a INCLINAÇÃO: no eixo ordinal, uma relação exatamente linear
+    (estabelecimento = k x RTT) aparece encurvada, e a figura passa a sugerir
+    um crescimento super-linear que os dados não têm.
+    """
     x0, x1 = PAD_L, W - PAD_R
     y0, y1 = PAD_T + 22, H - PAD_B
     n = len(xlabels)
-    xs = [x0 + (x1 - x0) * i / (n - 1) for i in range(n)]
+    if xvals is None:
+        xs = [x0 + (x1 - x0) * i / (n - 1) for i in range(n)]
+    else:
+        lo, hi = min(xvals), max(xvals)
+        xs = [x0 + (x1 - x0) * (v - lo) / (hi - lo) for v in xvals]
     allv = [v for _, vals in series for v in vals if v is not None]
     ymax = ymax if ymax is not None else max(allv) * 1.12
     ypix = lambda v: y1 - (v - ymin) / (ymax - ymin) * (y1 - y0)
@@ -222,6 +297,70 @@ def bar_chart(path, title, subtitle, labels, vals, ylab, note):
     return path
 
 
+def panels_log_chart(path, title, subtitle, xlabels, panels, xlab, lang):
+    """
+    Dois paineis logaritmicos empilhados, mesmo eixo x.
+
+    Empilhados e nao lado a lado porque a figura vai numa coluna do IEEE: dois
+    paineis lado a lado a 700px dariam 350px cada e os rotulos do eixo x
+    colidiriam. O eixo x aparece uma vez, embaixo, porque e o mesmo nos dois —
+    repeti-lo gastaria altura sem informar nada.
+    """
+    import math
+    x0 = PAD_L
+    x1 = W - PAD_R + 40
+    ptop, pheight, pgap = PAD_T + 44, 196, 62
+    parts = header(title, subtitle)
+
+    for pi, pan in enumerate(panels):
+        y0 = ptop + pi * (pheight + pgap)
+        y1 = y0 + pheight
+        decades = pan["decades"]
+        lo, hi = math.log10(decades[0]), math.log10(decades[-1])
+        ypix = lambda v: y1 - (math.log10(v) - lo) / (hi - lo) * (y1 - y0)
+
+        parts.append(f'<text x="{x0-44}" y="{y0-12}" font-size="11.5" '
+                     f'font-weight="600" fill="{INK}">{esc(pan["caption"])}</text>')
+        yt = [(d, ypix(d)) for d in decades]
+        ultimo = pi == len(panels) - 1
+        axes(parts, x0, x1, y0, y1,
+             list(zip(xlabels, [x0 + (x1 - x0) * i / (len(xlabels) - 1)
+                                for i in range(len(xlabels))])),
+             yt, xlab if ultimo else "", pan["ylab"],
+             ylabels=[dec(f"{d:g}", lang) for d in decades])
+
+        xs = [x0 + (x1 - x0) * i / (len(xlabels) - 1) for i in range(len(xlabels))]
+        for si, (name, vals) in enumerate(pan["series"]):
+            pts = [(xs[i], ypix(v)) for i, v in enumerate(vals) if v]
+            d = " ".join(("M" if k == 0 else "L") + f"{px:.1f} {py:.1f}"
+                         for k, (px, py) in enumerate(pts))
+            parts.append(f'<path d="{d}" fill="none" stroke="{SERIES[si]}" '
+                         f'stroke-width="2" stroke-linejoin="round"'
+                         + (f' stroke-dasharray="{DASH[si]}"' if DASH[si] else "") + '/>')
+            for px, py in pts:
+                parts.append(marker(MARK[si], px, py, SERIES[si]))
+        if len(pan["series"]) > 1:
+            legend(parts, [n for n, _ in pan["series"]], x1 + 18, y0 + 6)
+        # Rotulo direto nos extremos: o leitor nao deve interpolar num eixo log.
+        for i, txt in pan.get("annot", []):
+            v = pan["series"][0][1][i]
+            # Âncora pela borda: no meio, o rótulo do último ponto invade a
+            # legenda e o do primeiro cobre os rótulos do eixo y.
+            anchor = "start" if i == 0 else ("end" if i == len(xs) - 1 else "middle")
+            dx = 6 if i == 0 else (-6 if i == len(xs) - 1 else 0)
+            parts.append(f'<text x="{xs[i]+dx:.1f}" y="{ypix(v)-11:.1f}" font-size="11" '
+                         f'text-anchor="{anchor}" font-weight="600" fill="{INK}">'
+                         f'{esc(txt)}</text>')
+
+    alt = ptop + len(panels) * pheight + (len(panels) - 1) * pgap + 56
+    parts[0] = parts[0].replace(f'height="{H}"', f'height="{alt}"').replace(
+        f'viewBox="0 0 {W} {H}"', f'viewBox="0 0 {W} {alt}"')
+    parts[1] = f'<rect width="{W}" height="{alt}" fill="{SURFACE}"/>'
+    parts.append("</svg>")
+    open(path, "w").write("\n".join(parts))
+    return path
+
+
 # --------------------------------------------------------------------------
 # Leitura dos resumos
 # --------------------------------------------------------------------------
@@ -246,8 +385,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--results", default="results")
     ap.add_argument("--out", default="docs/figuras")
+    ap.add_argument("--lang", default="pt", choices=["pt", "en"],
+                    help="idioma dos rótulos (o artigo IEEE usa en)")
     a = ap.parse_args()
-    R, OUT = a.results, a.out
+    R, OUT, lang = a.results, a.out, a.lang
+    t = L[lang]
     os.makedirs(OUT, exist_ok=True)
 
     atraso = load(f"{R}/campaign-20260916T112433Z-3717e9a/resumo.csv")
@@ -261,52 +403,52 @@ def main():
     rtt = ["0", "50", "100", "200", "400"]
     c1 = [pick(atraso, c, "C1 control", "handshake_ms") for c in dconds]
     c3 = [pick(atraso, c, "C3 media", "handshake_ms") for c in dconds]
+    # C1 e C3 usam o MESMO handshake DTLS 1.3 e ficam a <= 1,2 ms um do outro:
+    # duas linhas sobrepostas não informariam nada e gastariam um slot da paleta.
     dtls = [(a_ + b_) / 2 for a_, b_ in zip(c1, c3)]
     feitos.append(line_chart(
-        f"{OUT}/fig1-estabelecimento-rtt.svg",
-        "Estabelecimento cresce com o RTT, e a inclinação identifica o perfil",
-        "Mediana de 5 repetições. O netem age nos dois sentidos, então RTT = 2 x atraso.",
-        rtt,
-        [("DTLS 1.3 (C1, C3) · 3 RTT", dtls),
-         ("TLS 1.3/TCP (C4) · 2 RTT",
-          [pick(atraso, c, "C4 bulk", "handshake_ms") for c in dconds]),
-         ("OSCORE (C2) · 1 RTT",
-          [pick(atraso, c, "C2 telemetry", "handshake_ms") for c in dconds])],
-        "Estabelecimento (ms)", "RTT do enlace (ms)",
+        f"{OUT}/fig1-establishment-rtt.svg", t["f1_t"], t["f1_s"], rtt,
+        [(t["f1_a"], dtls),
+         (t["f1_b"], [pick(atraso, c, "C4 bulk", "handshake_ms") for c in dconds]),
+         (t["f1_c"], [pick(atraso, c, "C2 telemetry", "handshake_ms") for c in dconds])],
+        t["f1_y"], t["f1_x"],
         # Escala redonda: com ymax automático os rótulos saíam "271.699".
-        ymax=1400, yticks_n=7, yfmt=lambda v: f"{v:.0f}"))
+        ymax=1400, yticks_n=7, yfmt=lambda v: f"{v:.0f}",
+        xvals=[0, 50, 100, 200, 400]))
 
     # Fig 2 — entrega vs perda
     lconds = ["loss-0", "loss-0.1", "loss-1", "loss-5", "loss-10", "loss-20"]
-    llab = ["0", "0,1", "1", "5", "10", "20"]
+    llab = [dec(x, lang) for x in ["0", "0.1", "1", "5", "10", "20"]]
     feitos.append(line_chart(
-        f"{OUT}/fig2-entrega-perda.svg",
-        "Só os perfis que retransmitem seguram a entrega",
-        "Mediana de 5 repetições. C2 e C4 ficam em 100% em todos os pontos.",
-        llab,
-        [("DTLS 1.3 (C1)", [pick(perda, c, "C1 control", "entrega_pct", 1) for c in lconds]),
-         ("DTLS-SRTP (C3)", [pick(perda, c, "C3 media", "entrega_pct", 1) for c in lconds]),
-         ("OSCORE e TLS (C2, C4)", [100.0] * 6)],
-        "Entrega (%)", "Perda no enlace (%), cada sentido",
+        f"{OUT}/fig2-delivery-loss.svg", t["f2_t"], t["f2_s"], llab,
+        [(t["f2_a"], [pick(perda, c, "C1 control", "entrega_pct", 1) for c in lconds]),
+         (t["f2_b"], [pick(perda, c, "C3 media", "entrega_pct", 1) for c in lconds]),
+         (t["f2_c"], [100.0] * 6)],
+        t["f2_y"], t["f2_x"],
         ymin=75, ymax=102, yticks_n=3, yfmt=lambda v: f"{v:.0f}"))
 
-    # Fig 3 — vazão do C4
+    # Fig 3 — o preço da entrega de 100%: cauda do C2 e vazão do C4
+    p50 = [pick(perda, c, "C2 telemetry", "p50_ms") for c in lconds]
+    p95 = [pick(perda, c, "C2 telemetry", "p95_ms") for c in lconds]
     vaz = [pick(perda, c, "C4 bulk", "mbps", 1) for c in lconds]
-    feitos.append(log_chart(
-        f"{OUT}/fig3-vazao-perda.svg",
-        "A vazão do TLS sobre TCP cai quatro ordens de grandeza",
-        "Canal C4, mediana de 5 repetições. Eixo logarítmico.",
-        llab, vaz, "Vazão (Mbps, log)", "Perda no enlace (%), cada sentido",
-        [(0, f"{vaz[0]:.0f} Mbps"), (2, f"{vaz[2]:.2f}"), (5, f"{vaz[5]:.3f} Mbps")]))
+    feitos.append(panels_log_chart(
+        f"{OUT}/fig3-price-of-delivery.svg", t["f3_t"], t["f3_s"], llab,
+        [{"caption": t["f3_pa"], "ylab": t["f3_ya"],
+          "decades": [10, 100, 1000, 10000, 100000],
+          "series": [(t["f3_a"], p95), (t["f3_b"], p50)],
+          "annot": [(0, dec(f"{p95[0]:.0f} ms", lang)),
+                    (5, dec(f"{p95[5]/1000:.1f} s", lang))]},
+         {"caption": t["f3_pb"], "ylab": t["f3_yb"],
+          "decades": [0.01, 0.1, 1, 10, 100],
+          "series": [("", vaz)],
+          "annot": [(0, dec(f"{vaz[0]:.0f}", lang)), (2, dec(f"{vaz[2]:.2f}", lang)),
+                    (5, dec(f"{vaz[5]:.3f}", lang))]}],
+        t["f3_x"], lang))
 
     # Fig 4 — custo da segurança em bytes
     feitos.append(bar_chart(
-        f"{OUT}/fig4-custo-seguranca.svg",
-        "O que cada perfil acrescenta a cada mensagem",
-        "Diferença entre o canal seguro e seu baseline em claro. Constante nas três condições.",
-        ["C1\nDTLS 1.3", "C2\nOSCORE", "C3\nSRTP", "C4\nTLS 1.3"],
-        [22, 11, 16, 22], "Bytes acrescentados por mensagem",
-        "C2 medido no pcap (requisição 46->57 B, resposta 35->46 B); os demais pelos contadores de fio."))
+        f"{OUT}/fig4-overhead-bytes.svg", t["f4_t"], t["f4_s"],
+        t["f4_l"], [22, 11, 16, 22], t["f4_y"], t["f4_n"]))
 
     for f in feitos:
         print(f)

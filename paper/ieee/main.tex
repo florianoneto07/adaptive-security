@@ -230,92 +230,134 @@ the same condition, is the cost of the profile.
 
 \input{tables/tab_results}
 
-\subsection{Establishment Scales in Round Trips}
-% Fonte: PRONTIDAO §10.1; Fig. 1 (fig1-estabelecimento-rtt).
-Fig.~\ref{fig:rtt} and Table~\ref{tab:delay} show establishment time against
-one-way delay. The slope identifies the profile: OSCORE's first exchange
-costs 1~RTT (the Echo challenge), TLS~1.3 over TCP 2~RTT (SYN plus the 1-RTT
-handshake) and DTLS~1.3 with the stateless cookie 3~RTT; the intercept is
-2--14~ms of processing. Under \emph{handover} DTLS~1.3 rises to 3.8~s
-(IQR~1.6~s) and its establishment bytes from 4\,588 to 7\,474, both from
-handshake retransmissions.
+\subsection{Session Establishment}
+% Fonte: ACHADOS.md Fig. 1 e 5; PRONTIDAO §10.1.
+Fig.~\ref{fig:latency} gives establishment time for the four profiles under
+the three conditions. On a clean link the profiles are separated by their
+handshakes---OSCORE \SI{1.1}{\milli\second} (no handshake: the context is
+derived from the master secret), TLS~1.3 \SI{3.3}{\milli\second}, DTLS~1.3
+\SI{6.9}{}--\SI{8.8}{\milli\second}---and the ordering is preserved as the
+link degrades, but the spread grows by three orders of magnitude, to
+\SI{4.2}{\second} for DTLS-SRTP under \emph{handover}.
+
+The delay sweep (Table~\ref{tab:delay}) explains why. Establishment scales as
+an integer number of round trips fixed by the profile: measured between the
+extremes, the slope is exactly 3~RTT for DTLS~1.3 with the stateless cookie,
+2~RTT for TLS~1.3 over TCP (SYN plus the 1-RTT handshake) and 1~RTT for
+OSCORE (the Echo challenge), over an intercept of 2--14~ms of local
+processing. The link does not change the protocol's cost; it multiplies it.
+Under \emph{handover} DTLS~1.3 adds a second effect: establishment bytes rise
+from 4\,588 to 7\,474 (C1) as the handshake is retransmitted, and the
+repetition-to-repetition spread reaches an IQR of \SI{1.6}{\second}.
 
 \begin{figure}[t]
 \centering
-\includesvg[width=\columnwidth]{figures/fig1-establishment-rtt}
-\caption{Establishment time vs.\ one-way delay (median of 5 repetitions).
-The slope, in RTTs, is fixed by the profile.}
-\label{fig:rtt}
+\includesvg[width=\columnwidth]{figures/fig1-establishment-latency}
+\caption{Session establishment time per profile and link condition (median of
+10 repetitions, logarithmic axis). The profile ordering is preserved across
+conditions; the absolute cost grows by three orders of magnitude.}
+\label{fig:latency}
 \end{figure}
 
 \input{tables/tab_delay}
 
-\subsection{Per-Message Overhead Is Constant}
-% Fonte: PRONTIDAO §2.4 item 2, §10.3.
-22~bytes per record for DTLS and TLS (header, inner content type, 16-byte
-tag), 28 for SRTP (12-byte RTP header plus tag) and 18 for OSCORE
-(CoAP+OSCORE around a 2-byte reading), identical across the three
-conditions. Against the baselines the cost is +22, +16 and +11~bytes
-respectively; OSCORE is the cheapest per message but requires a 46-byte
-request that the unidirectional channels do not have.
-
-\subsection{Delivery Separates the Profiles under Loss}
-% Fonte: PRONTIDAO §2.4 item 3, §10.2; Fig. 2 e 3.
-DTLS and SRTP do not retransmit application data: their delivery follows the
-loss (100\,\% $\rightarrow$ 80\,\% at 20\,\%), as Fig.~\ref{fig:loss} shows.
-CoAP/OSCORE and TCP stay at 100\,\% and pay for it in time, not in loss
-(Fig.~\ref{fig:price}). The distinction matters for a control channel: for
-OSCORE the \emph{typical} reading is unaffected---$p_{50}$ stays at 102~ms,
-the RTT, at every loss level---while $p_{95}$ grows from 103~ms to 30.6~s, so
-the cost falls entirely on the tail. For TCP the whole transfer degrades:
-throughput drops from 40.1 to 0.017~Mb/s. At
-20\,\% \emph{independent} loss the DTLS handshake failed in 3 of 5 (C1) and
-2 of 5 (C3) repetitions within its 1--8~s retransmission budget, while under
-\emph{handover} (20\,\% \emph{bursty}) it completed 10 of 10: bursts leave
-clean windows.
+\subsection{CPU: the Link Costs Time, Not Cycles}
+% Fonte: ACHADOS.md Fig. 2. A CPU/msg em clean NÃO entra — ver §3.4 da ANALISE.
+Fig.~\ref{fig:cpu} reports the client-process CPU time of the same
+establishments. Within each profile the three conditions are
+indistinguishable---DTLS~1.3 costs 3.1--3.8~ms whether the link is clean or
+losing 20\,\% of the packets---while Fig.~\ref{fig:latency} shows the same
+establishments taking 8.8~ms and 3.8~s of wall-clock time. The waiting is in
+the network, not in the endpoint. Across profiles the difference is an order
+of magnitude: OSCORE needs 0.30--0.44~ms because it runs no handshake, TLS~1.3
+1.5--1.7~ms, and the two DTLS profiles 3.1--3.8~ms, dominated by the ephemeral
+ECDHE. These values are software cryptography on this platform
+(Sec.~\ref{sec:method}); hardware acceleration would lower the absolute
+numbers but not the ordering, which follows the number of asymmetric
+operations each profile performs.
 
 \begin{figure}[t]
 \centering
-\includesvg[width=\columnwidth]{figures/fig2-delivery-loss}
-\caption{Delivery ratio vs.\ independent packet loss at 50~ms one-way delay.
-DTLS and SRTP do not retransmit application data, so their delivery tracks
-the loss; OSCORE and TLS stay at 100\,\% at every point.}
-\label{fig:loss}
+\includesvg[width=\columnwidth]{figures/fig2-establishment-cpu}
+\caption{Establishment CPU time per profile and link condition. Flat within
+each profile---the link condition does not change endpoint cost---and an order
+of magnitude apart between profiles.}
+\label{fig:cpu}
 \end{figure}
 
+\subsection{Memory Footprint}
+% Fonte: ACHADOS.md Fig. 3.
+Peak resident memory (Fig.~\ref{fig:memory}) varies by less than
+\SI{0.07}{\mega\byte} across the three conditions, so the informative contrast
+is against the unprotected baseline carrying the same traffic. The DTLS and
+TLS channels grow by \SI{1.2}{\mega\byte}, the cost of linking wolfSSL; the
+media channel grows by \SI{4.0}{\mega\byte}, wolfSSL plus libsrtp2; and the
+telemetry channel by only \SI{0.14}{\mega\byte}, because libcoap is present in
+the baseline as well and OSCORE adds a security context, not a stack. On a
+Linux process these footprints are dominated by the libraries and libc, and
+they should not be compared with the microcontroller figures reported
+in~\cite{restuccia2020,gunnarsson2021}.
+
 \begin{figure}[t]
 \centering
-\includesvg[width=\columnwidth]{figures/fig3-price-of-delivery}
-\caption{What the two retransmitting profiles pay for that 100\,\% delivery.
-(a)~OSCORE: the typical delay is unchanged (\SI{102}{\milli\second}, the RTT)
-while the tail grows to \SI{30.6}{\second}; (b)~TLS~1.3 over TCP: throughput
-falls four orders of magnitude.}
-\label{fig:price}
+\includesvg[width=\columnwidth]{figures/fig3-memory}
+\caption{Peak resident memory of each channel against its unprotected
+baseline. The increment is the security stack the profile links in.}
+\label{fig:memory}
+\end{figure}
+
+\subsection{Per-Message Overhead Is Constant}
+% Fonte: PRONTIDAO §2.4 item 2, §10.3. Só tabela: são quatro números.
+Per-message overhead is constant and independent of the link: 22~bytes per
+record for DTLS and TLS (header, inner content type, 16-byte tag), 28 for SRTP
+(12-byte RTP header plus tag) and 18 for OSCORE (CoAP and OSCORE around a
+2-byte reading), identical across the three conditions
+(Table~\ref{tab:results}). Against the unprotected baselines the cost is +22,
++16 and +11~bytes respectively: OSCORE is the cheapest per message, but it
+requires a 46-byte request that the unidirectional channels do not have.
+
+\subsection{Delivery under Loss, and What Reliability Costs}
+% Fonte: PRONTIDAO §2.4 item 3, §10.2; ACHADOS.md Fig. 4.
+DTLS and SRTP do not retransmit application data, so their delivery tracks the
+loss, from 100\,\% to 80\,\% at 20\,\% (Fig.~\ref{fig:loss}). CoAP/OSCORE and
+TCP hold 100\,\% at every point and pay for it in time. The two pay
+differently, and the difference matters when choosing a profile for a class:
+for OSCORE the \emph{typical} reading is untouched---$p_{50}$ stays at
+\SI{102}{\milli\second}, the RTT, at every loss level---and the whole cost
+falls on the tail, where $p_{95}$ grows from \SI{103}{\milli\second} to
+\SI{30.6}{\second}; for TCP the entire transfer degrades, with throughput
+falling from 40.1 to \SI{0.017}{\mega\bit\per\second}
+(Table~\ref{tab:loss}).
+
+The DTLS handshake itself becomes unreliable before the data path does. At
+20\,\% \emph{independent} loss it failed in 3 of 5 repetitions (C1) and 2 of 5
+(C3) within its 1--8~s retransmission budget, while under \emph{handover}
+(20\,\% \emph{bursty}) it completed 10 of 10: bursts leave clean windows wide
+enough for a handshake.
+
+\begin{figure}[t]
+\centering
+\includesvg[width=\columnwidth]{figures/fig4-delivery-loss}
+\caption{Delivery ratio vs.\ independent packet loss at \SI{50}{\milli\second}
+one-way delay. DTLS and SRTP do not retransmit application data, so their
+delivery tracks the loss; OSCORE and TLS stay at 100\,\% at every point.}
+\label{fig:loss}
 \end{figure}
 
 \input{tables/tab_loss}
 
 \subsection{The Cost of Security}
-% Fonte: ANALISE §3.4, PRONTIDAO §10.3; Fig. 4.
-Table~\ref{tab:cost} and Fig.~\ref{fig:cost} compare each secured channel
-with its baseline. Security costs establishment (0 $\rightarrow$ 3--9~ms on a
-clean link; seconds under \emph{handover}) and bytes, not reliability:
-delivery is indistinguishable in every condition. Handshake CPU is stable
-across conditions (DTLS 3.1--3.8~ms, TLS 1.5--1.7~ms, OSCORE 0.3--0.4~ms).
-Per-message CPU under emulated links is +9--11~$\mu$s for DTLS (128~B),
-+3--10~$\mu$s for SRTP (1200~B), +117~$\mu$s for TLS (16~KiB blocks, i.e.\
-software AES-GCM at 138~MiB/s) and +241--246~$\mu$s for OSCORE (protect and
-verify, CBOR/COSE processing). Resident memory grows by 1.2~MB (wolfSSL),
-4.1~MB (wolfSSL + libsrtp2) and 0.14~MB (libcoap in both) respectively.
+% Fonte: ANALISE §3.4, PRONTIDAO §10.3.
+Table~\ref{tab:cost} compares each secured channel with its baseline.
+Security costs establishment and bytes, not reliability: delivery of the
+secured channel is indistinguishable from the unprotected one in every
+condition, so the losses come from the link, not from the profile.
+Per-message CPU under emulated links is +9--11~$\mu$s for DTLS (128-byte
+messages), +3--10~$\mu$s for SRTP (1200-byte packets), +117~$\mu$s for TLS
+(16~KiB blocks) and +241--246~$\mu$s for OSCORE, which both protects the
+request and verifies the response and carries CBOR and COSE processing.
 
 \input{tables/tab_security_cost}
-
-\begin{figure}[t]
-\centering
-\includesvg[width=\columnwidth]{figures/fig4-overhead-bytes}
-\caption{Cost of security per channel: secured vs.\ unprotected baseline.}
-\label{fig:cost}
-\end{figure}
 
 % =====================================================================
 \section{Related Work}

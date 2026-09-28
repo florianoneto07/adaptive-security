@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="700" height="400" viewBox="0 0 700 400" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
 <rect width="700" height="400" fill="#fcfcfb"/>
 <text x="24" y="20" font-size="14" font-weight="600" fill="#0b0b0b">Only the profiles that retransmit hold delivery up</text>
-<text x="24" y="36" font-size="11.5" fill="#52514e">Median of 5 repetitions. C2 and C4 stay at 100% at every point.</text>
+<text x="24" y="36" font-size="11.5" fill="#52514e">Median of 5 repetitions, 50 ms fixed delay. C2 and C4 stay at 100% at every point.</text>
 <line x1="68" y1="346.0" x2="500" y2="346.0" stroke="#e6e5e1" stroke-width="1"/>
 <text x="59" y="350.0" font-size="11" text-anchor="end" fill="#52514e">75</text>
 <line x1="68" y1="249.3" x2="500" y2="249.3" stroke="#e6e5e1" stroke-width="1"/>

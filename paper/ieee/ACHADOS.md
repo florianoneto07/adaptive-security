@@ -21,88 +21,105 @@ de CPU são custo de software nesta plataforma.
 
 ---
 
-## As quatro figuras
+## As figuras
 
 Geradas por `./scripts/plot_resultados.py --out paper/ieee/figures --lang en`.
 Nomes neutros de idioma; a versão em português fica em `docs/figuras/`.
 
-### Fig. 1 — `fig1-establishment-rtt`
+O conjunto foi refeito em 2026-09-28. A primeira versão organizava as figuras
+em torno dos achados (uma figura por conclusão) e não em torno do experimento.
+Trocado pelo formato do trabalho de referência — **latência, CPU e memória,
+sempre com os quatro perfis lado a lado sob os mesmos tratamentos** — que é o
+que permite ao leitor comparar os perfis em vez de acreditar na conclusão.
 
-**Afirma:** o perfil determina o número de idas e voltas do estabelecimento; o
-enlace apenas multiplica.
+### Fig. 1 — `fig1-establishment-latency`
 
-Eixo x **linear em RTT** (não ordinal). Isso não é detalhe de estilo: com o
-eixo ordinal que a primeira versão usava, uma relação exatamente linear
-aparecia encurvada e a figura sugeria crescimento super-linear — o oposto da
-afirmação do título. Três retas, inclinações 3, 2 e 1:
+Barras agrupadas: quatro perfis x três condições, tempo de estabelecimento em
+ms, **eixo logarítmico** (vai de 1,1 ms a 4210 ms) com o valor escrito em cada
+barra, porque área em eixo log não é proporcional.
 
-| RTT (ms) | DTLS 1.3 (C1, C3) | TLS 1.3/TCP (C4) | OSCORE (C2) |
+| | enlace limpo | 3GPP C2 | handover |
 |---|---|---|---|
-| 0 | 13,6 / 12,5 | 6,3 | 2,0 |
-| 50 | 163,0 | 105,7 | 52,6 |
-| 100 | 313,3 | 205,5 | 102,2 |
-| 200 | 613,3 | 405,9 | 202,5 |
-| 400 | 1213,1 | 805,7 | 402,4 |
+| C1 DTLS 1.3 | 8,8 | 308,6 | 3754,3 |
+| C2 OSCORE | 1,1 | 101,6 | 413,9 |
+| C3 DTLS-SRTP | 6,9 | 308,7 | 4210,5 |
+| C4 TLS 1.3 | 3,3 | 203,7 | 823,3 |
 
-Inclinação medida entre os extremos: (1213,1 − 13,6)/400 = **3,00**;
-(805,7 − 6,3)/400 = **2,00**; (402,4 − 2,0)/400 = **1,00**. Intercepto de
-2 a 14 ms: é o processamento local.
+**Afirma:** a ordem entre os perfis se mantém nas três condições; o que muda
+é a escala, por três ordens de grandeza.
 
-C1 e C3 são fundidos numa série só. Usam o mesmo handshake DTLS 1.3 e ficam a
-≤ 1,2 ms um do outro — duas linhas sobrepostas não informariam nada e
-gastariam um slot da paleta.
+### Fig. 2 — `fig2-establishment-cpu`
 
-**Não diz:** nada sobre perda; a varredura de atraso fixa 0,1 %.
+Mesmos eixos da Fig. 1, agora CPU do processo cliente
+(`CLOCK_PROCESS_CPUTIME_ID`), escala linear.
 
-### Fig. 2 — `fig2-delivery-loss`
+| | enlace limpo | 3GPP C2 | handover |
+|---|---|---|---|
+| C1 DTLS 1.3 | 3,26 | 3,14 | 3,74 |
+| C2 OSCORE | 0,44 | 0,30 | 0,32 |
+| C3 DTLS-SRTP | 3,38 | 3,16 | 3,84 |
+| C4 TLS 1.3 | 1,65 | 1,52 | 1,52 |
 
-**Afirma:** só os perfis que retransmitem seguram a entrega.
+**Afirma:** dentro de cada perfil as três condições são indistinguíveis — o
+mesmo estabelecimento que leva 8,8 ms e 3,8 s de relógio custa a mesma CPU. A
+espera está na rede, não no nó. Entre perfis, uma ordem de grandeza: OSCORE
+não faz handshake; o DTLS é dominado pelo ECDHE efêmero.
 
-C1 (DTLS) e C3 (SRTP) acompanham a perda: 100 % → 80,5 % / 79,9 % a 20 %.
-C2 (OSCORE sobre CoAP confirmável) e C4 (TCP) ficam em 100 % em todos os
-pontos. Eixo x ordinal de propósito: 0 e 0,1 % não existem num log e colariam
-num linear.
+É o par da Fig. 1 e só funciona ao lado dela: sozinha, a figura parece dizer
+que "nada acontece".
 
-**Não diz:** que C2 e C4 são "melhores". O preço está na Fig. 3.
+### Fig. 3 — `fig3-memory`
 
-### Fig. 3 — `fig3-price-of-delivery`
+RSS de pico por canal, **seguro contra o baseline em claro**, em MB.
 
-**Afirma:** a entrega de 100 % se paga em tempo, não em perda. Dois painéis,
-eixos logarítmicos, mesmo eixo x da Fig. 2.
+| | seguro | em claro | acréscimo |
+|---|---|---|---|
+| C1 DTLS 1.3 | 4,24 | 3,01 | +1,23 |
+| C2 OSCORE | 4,15 | 4,01 | +0,14 |
+| C3 DTLS-SRTP | 6,91 | 2,90 | +4,01 |
+| C4 TLS 1.3 | 4,12 | 2,92 | +1,20 |
 
-(a) **C2/OSCORE:** o atraso **típico não muda** — p50 fica em 102 ms (o RTT)
-em todos os níveis de perda — e só a cauda cresce: p95 de 103 ms a **30,6 s**.
-É o backoff do CoAP confirmável.
+Entre as três condições o RSS varia menos de 0,07 MB, então mostrar as três
+daria barras idênticas; o contraste que informa é com o canal sem segurança.
+O acréscimo é a pilha que cada perfil linka: wolfSSL (C1, C4), wolfSSL mais
+libsrtp2 (C3), e quase nada no C2, porque o libcoap já está nos dois lados e
+o OSCORE acrescenta um contexto, não uma pilha.
 
-| perda | 0 | 0,1 | 1 | 5 | 10 | 20 |
-|---|---|---|---|---|---|---|
-| p50 (ms) | 102 | 102 | 102 | 102 | 102 | 102 |
-| p95 (ms) | 103 | 103 | 103 | 2978 | 6853 | 30569 |
+**Não diz** nada comparável com a literatura de microcontrolador: é processo
+Linux, dominado por libc e pelas bibliotecas.
 
-(b) **C4/TLS sobre TCP:** vazão de 40,1 a **0,017 Mbps**, quatro ordens de
-grandeza.
+### Fig. 4 — `fig4-delivery-loss`
 
-Esta figura substituiu uma que mostrava só a vazão. A distinção p50/p95 é o
-que importa para um canal de controle e estava invisível.
+Entrega (%) contra perda, seis pontos, 50 ms de atraso fixo. C1 e C3
+acompanham a perda (100 % → 80,5 % / 79,9 %); C2 e C4 ficam em 100 % em todos
+os pontos e por isso aparecem como uma série só. Eixo x ordinal de propósito:
+0 e 0,1 % não existem num log e colariam num linear.
 
-**Ressalva a declarar:** a amostra de RTT do C2 é de ~25–30 leituras por
-repetição (cadência de 2 s em 60 s), então o p95 por repetição é grosseiro; a
-mediana entre 5 repetições atenua, mas não elimina.
+### Fig. 5 — `fig5-establishment-rtt` (reserva, fora do artigo)
 
-### Fig. 4 — `fig4-overhead-bytes`
+Estabelecimento contra RTT, cinco pontos, eixo x **linear**: três retas de
+inclinação exatamente 3, 2 e 1 RTT (medida entre os extremos:
+(1213,1 − 13,6)/400 = 3,00; (805,7 − 6,3)/400 = 2,00; (402,4 − 2,0)/400 =
+1,00), sobre um intercepto de 2 a 14 ms.
 
-**Afirma:** o que cada perfil acrescenta por mensagem, constante nas três
-condições: DTLS +22 B, SRTP +16 B, TLS +22 B, OSCORE **+11 B**.
+É a figura mais limpa do conjunto, mas mostra o mesmo fenômeno da Fig. 1 com
+cinco pontos em vez de três, e não cabe num artigo de seis páginas junto com
+as outras quatro. Fica gerada; a Tab. `tab_delay` carrega os mesmos números.
+Se houver espaço, o melhor uso é **substituir** a Fig. 1 — ao custo de perder
+a comparação sob as três condições nomeadas.
 
-Origem: contadores de fio para C1/C3/C4; **pcap** para o C2, que não tem
-contadores (`pcap_bytes.py --split-port 5002`): requisição 46 → 57 B, resposta
-35 → 46 B.
+**Cuidado ao reaproveitar:** com eixo x ordinal (espaçamento igual entre 0,
+50, 100, 200 e 400), esta relação exatamente linear aparece encurvada e a
+figura passa a sugerir crescimento super-linear. Foi o defeito da primeira
+versão.
 
-**Não diz:** que o OSCORE é mais barato no total. Ele é o mais barato **por
-mensagem**, com a contrapartida de exigir uma requisição de 46 B que os canais
-unidirecionais não têm.
+### O que saiu do conjunto
 
----
+- **Sobrecarga por mensagem em barras.** São quatro números constantes; vivem
+  melhor na `tab_results` e na `tab_security_cost`.
+- **Figura de dois painéis com p50/p95 do C2 e vazão do C4.** A informação
+  (o custo do OSCORE cai na cauda, não na mensagem típica) continua no texto
+  e na `tab_loss`.
 
 ## Os cinco achados
 
